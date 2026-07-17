@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { Worker, type Job } from "bullmq";
 import { db } from "../lib/db";
 import { jobRuns } from "../lib/db/schema";
-import { bullConnection, QUEUE_NAMES, type QueueName } from "../lib/queues";
+import { bullConnection, getQueue, QUEUE_NAMES, type QueueName } from "../lib/queues";
+import { runDueRecurringRules } from "../lib/services/recurring";
+import { sendDailyDigests } from "../lib/services/digest";
 
 // Worker skeleton: every queue gets a Worker whose processors dispatch by job
 // name and always record a job_runs row (docs/00 — failures surface in
@@ -21,6 +23,16 @@ const processors: Record<QueueName, Record<string, Processor>> = {
   },
   ghl: {},
   publish: {},
+  cron: {
+    // Spawn tasks for recurring rules whose next_run_at has passed.
+    async "spawn-recurring"() {
+      return runDueRecurringRules();
+    },
+    // Per-member daily digest (due today / overdue / awaiting review).
+    async "daily-digest"() {
+      return sendDailyDigests();
+    },
+  },
 };
 
 function payloadHash(data: unknown): string {
@@ -75,6 +87,24 @@ function startWorker(queueName: QueueName): Worker {
 
 const workers = QUEUE_NAMES.map(startWorker);
 console.log(`[worker] listening on queues: ${QUEUE_NAMES.join(", ")}`);
+
+// Register repeatable cron jobs. BullMQ dedupes by jobId, so re-running the
+// worker won't stack duplicate schedules.
+async function registerSchedules() {
+  const cron = getQueue("cron");
+  await cron.add(
+    "spawn-recurring",
+    {},
+    { repeat: { pattern: "*/5 * * * *" }, jobId: "spawn-recurring" }, // every 5 min
+  );
+  await cron.add(
+    "daily-digest",
+    {},
+    { repeat: { pattern: "0 8 * * *" }, jobId: "daily-digest" }, // 08:00 daily
+  );
+  console.log("[worker] cron schedules registered");
+}
+registerSchedules().catch((e) => console.error("[worker] schedule registration failed", e));
 
 async function shutdown() {
   await Promise.all(workers.map((w) => w.close()));

@@ -8,6 +8,13 @@
       "when": 1784300532782,
       "tag": "0000_gifted_psynapse",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784312520249,
+      "tag": "0001_blushing_kree",
+      "breakpoints": true
     }
   ]
 }

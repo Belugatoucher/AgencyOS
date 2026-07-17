@@ -65,6 +65,55 @@ export const files = pgTable("files", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ===== Tasks (db/schema.sql, docs/04) =====
+
+export const tasks = pgTable(
+  "tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id").references(() => accounts.id),
+    projectId: uuid("project_id").references(() => projects.id),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("todo"), // backlog|todo|in_progress|in_review|done
+    priority: text("priority").notNull().default("normal"), // low|normal|high|urgent
+    assigneeId: uuid("assignee_id").references(() => users.id),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    estimateMinutes: integer("estimate_minutes"),
+    source: text("source").notNull().default("manual"), // manual|meeting|review|recurring|asset
+    sourceId: uuid("source_id"),
+    clientVisible: boolean("client_visible").notNull().default(false),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("tasks_assignee").on(t.assigneeId, t.status, t.dueAt)],
+);
+
+export const taskChecklist = pgTable("task_checklist", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id").notNull().references(() => tasks.id),
+  label: text("label").notNull(),
+  done: boolean("done").notNull().default(false),
+  position: integer("position").notNull(),
+});
+
+export const taskComments = pgTable("task_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id").notNull().references(() => tasks.id),
+  parentId: uuid("parent_id"), // threaded once; self-reference enforced in SQL
+  authorId: uuid("author_id").notNull().references(() => users.id),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const recurringRules = pgTable("recurring_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  rrule: text("rrule").notNull(),
+  taskTemplate: jsonb("task_template").notNull(), // {title, accountId?, projectId?, assigneeId?, ...}
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
+  active: boolean("active").notNull().default(true),
+});
+
 // ===== Ops =====
 
 export const notifications = pgTable(
@@ -121,3 +170,7 @@ export type Membership = typeof memberships.$inferSelect;
 export type FileRecord = typeof files.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type JobRun = typeof jobRuns.$inferSelect;
+export type Task = typeof tasks.$inferSelect;
+export type TaskChecklistItem = typeof taskChecklist.$inferSelect;
+export type TaskComment = typeof taskComments.$inferSelect;
+export type RecurringRule = typeof recurringRules.$inferSelect;
