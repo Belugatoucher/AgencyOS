@@ -48,10 +48,10 @@ function startWorker(queueName: QueueName): Worker {
   const worker = new Worker(
     queueName,
     async (job) => {
-      const handler = processors[queueName][job.name];
-      if (!handler) throw new Error(`No processor for ${queueName}/${job.name}`);
       const started = Date.now();
       try {
+        const handler = processors[queueName][job.name];
+        if (!handler) throw new Error(`No processor for ${queueName}/${job.name}`);
         const result = await handler(job);
         await recordRun(queueName, job, "ok", null, Date.now() - started);
         return result;

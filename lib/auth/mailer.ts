@@ -7,9 +7,10 @@ export async function sendMagicLinkEmail(to: string, url: string): Promise<void>
 
   // DECISION: dev mailbox — without SMTP_URL the link is written to
   // .dev-mail/last-link.txt (gitignored) and logged. Local dev and the
-  // Playwright smoke test read it from there; production requires SMTP_URL.
+  // Playwright smoke test read it from there. Production requires SMTP_URL;
+  // DEV_MAILBOX=1 is the explicit opt-out for e2e runs of the prod build.
   if (!smtpUrl) {
-    if (process.env.NODE_ENV === "production") {
+    if (process.env.NODE_ENV === "production" && process.env.DEV_MAILBOX !== "1") {
       throw new Error("SMTP_URL is required in production");
     }
     const dir = path.join(process.cwd(), ".dev-mail");

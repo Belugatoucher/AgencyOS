@@ -67,9 +67,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     session({ session, user }) {
-      session.user.id = user.id;
-      session.user.role = ((user as { role?: string }).role ?? "client") as Role;
-      return session;
+      // Return a clean shape — the raw database session includes sessionToken,
+      // which must never appear in the /api/auth/session response body.
+      return {
+        expires: session.expires,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name ?? "",
+          role: ((user as { role?: string }).role ?? "client") as Role,
+        },
+      } as typeof session;
     },
   },
 });

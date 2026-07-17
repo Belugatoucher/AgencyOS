@@ -7,6 +7,9 @@ export async function sendInviteEmail(to: string, name: string): Promise<void> {
   const smtpUrl = process.env.SMTP_URL;
 
   if (!smtpUrl) {
+    if (process.env.NODE_ENV === "production" && process.env.DEV_MAILBOX !== "1") {
+      throw new Error("SMTP_URL is required in production");
+    }
     // Same dev-mailbox convention as magic links; invites must not crash
     // local dev that has no SMTP.
     const dir = path.join(process.cwd(), ".dev-mail");
