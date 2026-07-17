@@ -16,8 +16,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
 
   const resolved = await resolveShareLink(token, ip, pin);
   if (resolved.status !== "ok") {
-    const code = resolved.status === "locked_out" ? 429 : resolved.status === "expired" ? 410 : 401;
-    return NextResponse.json({ status: resolved.status }, { status: resolved.status === "pin_required" ? 200 : code });
+    // pin_required is a 200 (the client shows the PIN prompt); the rest map to
+    // the closest HTTP status. Unknown/bad tokens are 404, not 401 — there's no
+    // session to be unauthorized against.
+    const codeByStatus: Record<string, number> = {
+      pin_required: 200,
+      locked_out: 429,
+      expired: 410,
+      not_found: 404,
+    };
+    return NextResponse.json({ status: resolved.status }, { status: codeByStatus[resolved.status] ?? 404 });
   }
 
   const link = resolved.link;

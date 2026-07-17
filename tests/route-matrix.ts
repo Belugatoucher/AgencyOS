@@ -2,12 +2,17 @@ import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { eq } from "drizzle-orm";
+import { randomBytes } from "node:crypto";
 import {
   accounts,
+  assets,
+  files,
   leads,
   memberships,
   pipelines,
+  reviewItems,
   sessions,
+  shareLinks,
   tasks,
   users,
 } from "../lib/db/schema";
@@ -35,6 +40,9 @@ type Fixture = {
   taskB: string; // task in B
   pipelineB: string; // pipeline in B
   leadB: string; // lead in B
+  assetB: string; // asset in B
+  reviewItemB: string; // review item in B
+  shareToken: string; // public share link to reviewItemB (no PIN)
   cookies: Record<"admin" | "member" | "clientA" | "anon", string | null>;
 };
 
@@ -92,6 +100,29 @@ async function setup(): Promise<Fixture> {
     .values({ accountId: b!.id, pipelineUuid: pipelineB!.id, name: "B lead" })
     .returning();
 
+  // An asset in account B (needs a file row in B).
+  const [fileB] = await db
+    .insert(files)
+    .values({ accountId: b!.id, r2Key: `${b!.id}/uploads/${tag}/logo.png`, filename: "logo.png", mime: "image/png", sizeBytes: 10 })
+    .returning();
+  const [assetB] = await db
+    .insert(assets)
+    .values({ accountId: b!.id, fileId: fileB!.id, type: "logo" })
+    .returning();
+
+  // A client_visible review item in B + a no-PIN share link to it.
+  const [reviewItemB] = await db
+    .insert(reviewItems)
+    .values({ accountId: b!.id, title: "B review", clientVisible: true })
+    .returning();
+  const shareToken = randomBytes(24).toString("base64url");
+  await db.insert(shareLinks).values({
+    token: shareToken,
+    kind: "review_item",
+    targetId: reviewItemB!.id,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+  });
+
   return {
     accountA: a!.id,
     accountB: b!.id,
@@ -100,6 +131,9 @@ async function setup(): Promise<Fixture> {
     taskB: taskB!.id,
     pipelineB: pipelineB!.id,
     leadB: leadB!.id,
+    assetB: assetB!.id,
+    reviewItemB: reviewItemB!.id,
+    shareToken,
     cookies: {
       admin: await mintSession(adminId),
       member: await mintSession(memberId),
@@ -254,6 +288,74 @@ const CASES: Case[] = [
     method: "POST",
     path: (f) => `/api/leads/${f.leadB}/score`,
     expect: { admin: 202, member: 202, clientA: 403, anon: ANON },
+  },
+  // ===== Assets (account-scoped; clients read own accounts only) =====
+  {
+    name: "GET assets in account B (client of A: not found)",
+    method: "GET",
+    path: (f) => `/api/assets?account=${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST asset (clients cannot create)",
+    method: "POST",
+    path: () => "/api/assets",
+    body: (f) => ({ accountId: f.accountA, fileId: f.assetB, type: "logo" }),
+    expect: { admin: [400, 201], member: [400, 201], clientA: 403, anon: ANON },
+  },
+  {
+    name: "PATCH asset in B (client of A refused)",
+    method: "PATCH",
+    path: (f) => `/api/assets/${f.assetB}`,
+    body: () => ({ status: "approved" }),
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET asset usage in B (client refused)",
+    method: "GET",
+    path: (f) => `/api/assets/${f.assetB}/usage`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  // ===== Review =====
+  {
+    name: "GET review items in B (client of A: not found)",
+    method: "GET",
+    path: (f) => `/api/review/items?account=${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET review item in B (client of A: not found)",
+    method: "GET",
+    path: (f) => `/api/review/items/${f.reviewItemB}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST review item (clients cannot create)",
+    method: "POST",
+    path: () => "/api/review/items",
+    body: (f) => ({ accountId: f.accountA, title: "probe" }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST share mint on B item (client refused)",
+    method: "POST",
+    path: (f) => `/api/review/items/${f.reviewItemB}/share`,
+    body: () => ({}),
+    expect: { admin: 201, member: 201, clientA: 404, anon: ANON },
+  },
+  // Public share resolution is intentionally session-agnostic: every role
+  // (including anon) reaches it identically; a valid no-PIN token → 200 ok.
+  {
+    name: "GET public share (no session required)",
+    method: "GET",
+    path: (f) => `/api/share/${f.shareToken}`,
+    expect: { admin: 200, member: 200, clientA: 200, anon: 200 },
+  },
+  {
+    name: "GET public share bad token → 404",
+    method: "GET",
+    path: () => `/api/share/definitelynotarealtokenxxxxxxxx`,
+    expect: { admin: 404, member: 404, clientA: 404, anon: 404 },
   },
 ];
 
