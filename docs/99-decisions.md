@@ -14,6 +14,30 @@ Format:
 
 ---
 
+## 2026-07-17 — Notebook prompt added as prompts/notebook.md (pack had none)
+**Context:** docs/16 specifies the Notebook uses "the same tool-use pattern as Ask the Brain, scoped to kb chunks," but the spec pack shipped no prompt file for it; CLAUDE.md rule 6 wants prompts loaded verbatim from prompts/.
+**Decision:** Wrote prompts/notebook.md following the pack's exact conventions (frontmatter, fenced system prompt, tools list, post-processing) so the runtime loads it the same way as every other prompt. The scope wall is enforced twice: in the prompt (rule 2) and structurally — the Notebook's two tools (search_handbook/get_sop) can only reach kb_chunks/sops, and no Ask-the-Brain tool touches kb_chunks.
+**Alternatives considered:** inline prompt string in code — breaks the one-place-to-edit convention the pack establishes.
+**Revisit if:** the pack later ships an official notebook prompt — replace the body, keep the file.
+
+## 2026-07-17 — Course assignments surface as My-Tasks tasks, not a parallel inbox
+**Context:** docs/16: assignments "appear in My Tasks and the Slack morning DM"; the reuse map bans new notification machinery.
+**Decision:** An assignment (rule match or manual) creates one idempotent task per user+course ("Complete course: X", sourceId = course id, due = now + due_days) assigned to the learner. The existing daily digest picks it up for the morning DM; completion is tracked separately in lesson_progress (the matrix reads progress, not the task). Rules fire on invite (team.ts hook) and immediately for current role holders when a rule is created.
+**Alternatives considered:** a dedicated assignments inbox — exactly the parallel machinery the doc rules out; auto-completing the task when the course finishes — deferred until the course-complete event exists.
+**Revisit if:** team tags land (rules currently match role + explicit user ids only).
+
+## 2026-07-17 — /handbook Slack command: signature-verified, disabled-by-default, admin-attributed
+**Context:** docs/16 wants `/handbook` anywhere internal; the full Slack app is doc 15 and doesn't exist yet, and Slack user ids aren't mapped to app users.
+**Decision:** /api/slack/commands verifies Slack's v0 HMAC (5-min skew window, timing-safe compare) and returns 501 when SLACK_SIGNING_SECRET is unset — never an open endpoint (matrix-covered). Asks run as a synthetic member viewer; gap rows attribute to the first admin until the doc-15 app brings a user directory.
+**Alternatives considered:** skipping the endpoint entirely — loses the wiring and the security posture test; email-mapping Slack users via the Slack API — needs the doc-15 bot token anyway.
+**Revisit if:** doc 15 lands (map real users, respond in_channel, add /brain).
+
+## 2026-07-17 — Lesson kb chunks carry the window's start_ms; SOP chunks keep their heading inside the text
+**Context:** docs/16 wants Notebook citations to jump to the moment in a lesson video and deep-link SOP sections.
+**Decision:** Lesson transcripts chunk into ~1000-char windows, each carrying the first segment's start_ms → citations `lesson:<id>@<ms>`. SOP bodies sectionize on markdown headings (GitHub-style slugs) and each chunk keeps its heading line in the text so retrieval sees the section's name; citations `sop:<id>#<anchor>`. Thin-answer threshold for gap tracking is top-similarity < 0.25 under the hash embedder.
+**Alternatives considered:** per-segment chunks — too granular, embeddings degrade on 1-line texts.
+**Revisit if:** EMBED_MODE=local changes similarity distributions (recalibrate the thin threshold).
+
 ## 2026-07-17 — Intake batch commits through the review screen, not decideSuggestion
 **Context:** docs/10 wants submissions to land as a brain_suggestions batch AND wants member review-with-edits before anything writes to the Brain. Applying a whole intake through the one-field decideSuggestion path would bypass the edit step.
 **Decision:** Submit inserts ONE pending suggestion (field `intake`, proposed = the merged sections) as the audit-trail/pending marker; decideSuggestion refuses to blind-accept that field and points at the onboarding review screen; the commit endpoint takes the member-edited payload, writes Brain v1 through the versioned updater, marks the suggestion accepted, seeds competitor research stubs (status `stub`, kept out of retrieval), turns access gaps into AM tasks, and optionally spawns the kickoff template (tasks + slots + meeting).

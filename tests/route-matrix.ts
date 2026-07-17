@@ -60,6 +60,7 @@ type Fixture = {
   intakeB: string; // intake form id in B (Onboarding)
   intakeTokenB: string; // its public token
   reviewVersionB: string; // version under reviewItemB (comment-read scoping)
+  courseId: string; // published Academy course (global, internal-only)
   cookies: Record<"admin" | "member" | "clientA" | "anon", string | null>;
 };
 
@@ -194,6 +195,13 @@ async function setup(): Promise<Fixture> {
     .values({ itemId: reviewItemB!.id, versionNo: 1, fileId: fileB!.id, status: "ready" })
     .returning();
 
+  // Academy fixture: a published course for lesson-create probes.
+  const { courses } = await import("../lib/db/schema");
+  const [course] = await db
+    .insert(courses)
+    .values({ title: `Matrix course ${tag}`, status: "published" })
+    .returning();
+
   return {
     accountA: a!.id,
     accountB: b!.id,
@@ -214,6 +222,7 @@ async function setup(): Promise<Fixture> {
     intakeB: intakeB!.id,
     intakeTokenB,
     reviewVersionB: reviewVersionB!.id,
+    courseId: course!.id,
     cookies: {
       admin: await mintSession(adminId),
       member: await mintSession(memberId),
@@ -698,6 +707,74 @@ const CASES: Case[] = [
     method: "GET",
     path: () => "/api/search?q=matrix",
     expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  // ===== Academy (docs/16 — clients never see training or the handbook) =====
+  {
+    name: "GET /api/sops (internal only)",
+    method: "GET",
+    path: () => "/api/sops",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST SOP (clients cannot create)",
+    method: "POST",
+    path: () => "/api/sops",
+    body: () => ({ title: "Matrix SOP", category: "ops", body: "# Matrix\nprobe" }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET /api/courses (internal only)",
+    method: "GET",
+    path: () => "/api/courses",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST lesson into course (client refused)",
+    method: "POST",
+    path: () => "/api/lessons",
+    body: (f) => ({ courseId: f.courseId, position: 99, title: "Matrix lesson", kind: "doc", body: "probe" }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET completion matrix (admin only)",
+    method: "GET",
+    path: () => "/api/academy/matrix",
+    expect: { admin: 200, member: 403, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST assignment rule (client refused)",
+    method: "POST",
+    path: (f) => "/api/academy/assignments",
+    body: (f) => ({ courseId: f.courseId, roles: ["member"] }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET handbook search (internal only)",
+    method: "GET",
+    path: () => "/api/notebook?q=kickoff",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    // no ANTHROPIC_API_KEY in CI: internal roles reach the model call and fail
+    // loudly; clients are refused before any retrieval
+    name: "POST notebook ask (client refused before the model call)",
+    method: "POST",
+    path: () => "/api/notebook",
+    body: () => ({ question: "matrix probe" }),
+    expect: { admin: [200, 500], member: [200, 500], clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET notebook gaps (internal only)",
+    method: "GET",
+    path: () => "/api/notebook/gaps",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST /api/slack/commands unconfigured → 501 (never open)",
+    method: "POST",
+    path: () => "/api/slack/commands",
+    body: () => ({}),
+    expect: { admin: 501, member: 501, clientA: 501, anon: 501 },
   },
 ];
 

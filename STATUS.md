@@ -1,40 +1,39 @@
-# STATUS — through Week 10: Onboarding + Client Portal + polish
+# STATUS — through Weeks 11-12: Academy (SOPs · Training · Notebook)
 
 _Last session: 2026-07-17. Read this first next session (HANDOFF.md rule)._
 
-## Week 10 — Onboarding (docs/10) + Portal (docs/11) + roadmap polish — COMPLETE (MVP scope; see checklists)
+## Weeks 11-12 — Academy (docs/16) — COMPLETE (MVP scope; see checklist)
+Replaces Trainual/Notion-wiki/NotebookLM on the existing rails: files/media workers, whisper, the wk8 RAG layer, notifications. All of it internal-only — clients never see training or the handbook.
 
-- **Onboarding** — internal console (`/onboarding`): mint 30-day CSPRNG intake links per account. Public form (`/onboard/[token]`, no login, audit-item-6 hardened: per-IP rate limit, body cap, strict Zod, identical 404s) with partial saves. Submit → ONE pending `brain_suggestions` row (field `intake`; decideSuggestion refuses blind accept). Review & commit screen: member edits every answer, commit writes **Brain v1** through the versioned updater, competitors → `research_docs` stubs (status `stub`, out of retrieval), access gaps → AM tasks, optional **project template** spawns kickoff tasks (+offset_days), content slots, and a kickoff meeting.
-- **Portal** — `/portal/[accountId]` client-skinned shell (Home/Reviews/Content/Files/Meetings); clients land there on login (single membership) — a filtered view over existing role checks, no new permission logic. Home = action-needed stack (reviews awaiting, posts awaiting, visible tasks) with the "You're all caught up" empty state. Reviews reuse `ReviewItemClient` with team controls hidden. Content: read-only list with Approve / Request-changes; **rejections require ≥1 {current, proposed} line suggestion** (stored on `post_approvals.suggestions`). Files: shared collections. Meetings: `client_visible` recaps, summary only. Client actions ping the team Slack.
-- **Review hardening (found during portal work)** — the comments GET authorized any signed-in user (cross-account leak): now per-actor authorization (404 cross-account, matrix-covered). New `review_comments.internal` flag: internal threads are role-filtered from clients/guests everywhere (API + public share payload); only internal actors can write internal comments.
-- **Weekly client digest** — cron Fri 08:30, per-account `portal_digest` weekly|off, quiet weeks skipped; "needs your eyes" computed via a synthetic client viewer through `getPortalHome`, so the digest can never say more than the portal shows. SMTP with dev-mailbox fallback + in-app notification.
-- **Polish** — search-everywhere bar in the header (`/api/search`: accounts/tasks/leads/assets/meetings+transcript-FTS/posts/reviews, internal only). `/admin/health` already covers new queues generically. `scripts/backup.sh` (pg_dump+gzip, optional age encryption, optional write-only-R2 upload) + `scripts/restore-check.sh`.
+- **SOP library** (`/sops`) — markdown SOPs in six fixed categories + tags; publish snapshots to `sop_versions` (versioned like the Brain) and **chunks-on-publish** into `kb_chunks` with GitHub-style heading anchors. **Staleness engine**: daily 06:00 cron flags published SOPs past `review_every_days` as `needs_review` + pings the owner; "Still accurate" resets the clock. **Promote to SOP** drafts from a meeting's notes or a task description.
+- **Academy** (`/academy`) — courses → lessons (video|sop|doc|quiz). Video lessons ride the existing rails: `lesson-media` (HLS ladder) → `transcribe-lesson` (whisper) → `embed-lesson` (timestamped kb chunks). **Assignment rules** (roles and/or user ids) fire on invite and immediately for current holders, spawning one idempotent My-Tasks task per user+course (morning digest picks it up — no new notification machinery). **Quizzes**: Zod-gated shape, server-side grading, attempts tracked, failed questions return rewatch evidence (`evidence_ms`/`evidence_anchor`); AI lesson+quiz drafts via `prompts/course-builder.md` verbatim. Admin **completion matrix** (people × published courses).
+- **Notebook** ("Ask the Handbook") — same read-only tool-loop pattern as Ask the Brain but scoped to `kb_chunks` ONLY: the **scope wall is structural both directions** (Notebook tools can't reach client tables; Brain tools never touch kb_chunks). Citations: `sop:<id>#<anchor>` and `lesson:<id>@<start_ms>`. Thin/none answers land in `notebook_gaps`; weekly Wed 09:00 cron posts the "SOPs we're missing" list to Slack; gaps resolve by pointing at the SOP that now answers them. `/handbook` via `/api/slack/commands` — v0 HMAC verified, **501 when unconfigured, never open**. `prompts/notebook.md` added following pack conventions (pack had none — see decisions).
 
-Schema (migrations 0007-0008, SQL files updated in kind): `intake_forms`, `project_templates` (from db/003), `post_approvals.suggestions`, `accounts.portal_digest`, `review_comments.internal`.
+Schema (migration 0009): `sops`, `sop_versions`, `kb_chunks` (vector 384 + hnsw), `courses`, `lessons`, `training_assignments`, `lesson_progress`, `notebook_gaps` — matches db/004-academy.sql.
 
-Routes: `GET/POST /api/onboarding/intakes` (+`/[id]/commit`), `GET/POST /api/onboarding/templates`, `GET/POST /api/onboarding/form/[token]` (public), `GET /api/portal/[accountId]` (+`/meetings`), `GET /api/search`. Nav: Onboarding tab; portal is its own route group.
+Routes: `GET/POST /api/sops` (+`/[id]`, `/publish`, `/review`, `/promote`), `GET/POST /api/courses` (+`/[id]`, `/publish`), `POST /api/lessons` (+`/[id]/complete`, `/[id]/quiz`, `/draft`), `POST /api/academy/assignments`, `GET /api/academy/matrix` (admin), `GET/POST /api/notebook` (+`/gaps`, `/gaps/[id]/resolve`), `POST /api/slack/commands`. Nav: SOPs + Academy tabs.
 
-## Verified this session (real Postgres + Redis, prod build)
-- Unit: **60 pass**. E2e: **11 pass** (+portal spec: admin intake link → public form fill/partial-save/submit → review & commit; then a REAL client session minted in the DB: lands in portal, sees action stack, blocked from /tasks, approves a post). Route-matrix: **276/276** (+48: onboarding internal + public-token cases, portal cross-account 404s / own-account 200s, comment-read leak regression, bare-rejection 400, search internal-only).
-- Commit side effects checked in the DB: Brain v1 offer written (version bumped), competitor stub `Acme Clinics Co(stub)`, gap task "Get access: Meta ad account".
-- `sendClientDigests()` executed live: 4 accounts, real digest bodies in dev-mail.
-- **Restore drill actually ran**: backup taken, restored into a scratch DB — 44 tables, 8 users — then dropped.
+## Verified this session (real Postgres + pgvector + Redis, prod build)
+- Unit: **67 pass** (+7: heading slugs, sectionizer anchors incl. long-section re-chunk, quiz grading pass/fail/evidence, quiz-shape caps). E2e: **12 pass** (+academy: SOP author→publish, course→lesson→mark understood→publish, matrix shows the course, notebook kb search hits, gaps tab). Route-matrix: **316/316** (+40: SOPs/courses/lessons/matrix(admin-only)/notebook internal-only, Slack endpoint 501-when-unconfigured for every role).
+- `scripts/verify-academy.ts` (19 checks, all pass, live worker): published SOP embedded by the real `embed-sop` job → **retrieval ranks the right section first and cites `#naming-conventions`**; quiz fail returns rewatch evidence then pass completes; matrix reads 2/2; assignment rule spawned exactly one task for a role holder and stayed idempotent on re-fire; overdue SOP flipped to `needs_review`; task promoted to draft SOP; gap listed + weekly report ran.
+- Lesson video pipeline is wiring-verified (jobs registered on media/transcribe/ai queues; full ffmpeg/whisper not in this env — same posture as Review/Notes).
 
 ## How to run (unchanged, plus)
 ```bash
-pnpm test          # 60 unit
-pnpm test:matrix   # 276-check route matrix (needs running app + DB)
-pnpm build && pnpm test:e2e   # 11 playwright specs (prod build — dev-mode CSP note in decisions)
-pnpm worker        # + cron: client-digest (Fri 08:30)
-./scripts/backup.sh && ./scripts/restore-check.sh   # backup + monthly drill
+pnpm test          # 67 unit
+pnpm test:matrix   # 316-check route matrix (needs running app + DB)
+pnpm build && pnpm test:e2e   # 12 playwright specs
+pnpm worker        # + media: lesson-media · transcribe: transcribe-lesson ·
+                   #   ai: embed-sop, embed-lesson · cron: sop-staleness-sweep (06:00), notebook-gap-report (Wed 09:00)
+pnpm tsx scripts/verify-academy.ts   # 19-check live pipeline verification
 ```
 
-## Next (Weeks 11-12 — Academy, docs/16)
-SOP library + staleness engine, courses/lessons reusing the media + whisper pipelines, role-based assignments + completion matrix, quizzes, Notebook chat on the kb scope. Tables in db/004-academy.sql. Rides existing rails (files/media workers, RAG layer from wk8, notifications) — per the scope-creep rule this should be cheap.
+## Next (roadmap: v1.5 gates + remaining docs)
+The 12-week core roadmap is BUILT. What remains is gated/deferred work, roughly by value: doc 15 Slack app (unlocks real /handbook + /brain attribution), doc 14 theming (portal theme proposal from intake logos), doc 17 presales (deck-autofill prompt exists), doc 12 v1.5 (Meta Marketing API metrics adapter, GHL adapters), doc 13 extras (PWA share-target for hooks), plus the deferral list below. Seed the six starter-curriculum tracks as real content when operating.
 
 ## Carrying forward / needs Ryan
-- **AI features need `ANTHROPIC_API_KEY`**: lead scoring, meeting notes, content drafting, Ask the Brain. Transcription needs whisper/pyannote + `HF_TOKEN`. `EMBED_MODE=local` in prod.
-- Deferred this week: brand-asset drop-box on the intake (needs public presign), portal theme proposal from logo (doc 14), portal Documents page (doc 17 module), portal Leads page (doc 02 pass; `portal_leads` setting exists), "what changed in v2" review diffs, composer per-suggestion accept/decline UI, custom portal domains.
-- Media + transcription remain wiring-verified only in this env; embeddings/retrieval verified for real.
-- Route-matrix hand-extended per new route (automation still TODO). Now 276 checks.
-- Standing deploy needs: SMTP_URL, R2 creds + CORS, AUTH_SECRET, APP_ENCRYPTION_KEY, ANTHROPIC_API_KEY, HF_TOKEN; GHL_* when leaving manual publish; BACKUP_AGE_RECIPIENT + R2_BACKUP_* for encrypted off-site backups.
+- **AI features need `ANTHROPIC_API_KEY`**: lead scoring, meeting notes, content drafting, Ask the Brain, Notebook answers (kb *search* works without it), course-builder drafts. Transcription (meetings + lessons) needs whisper/pyannote + `HF_TOKEN`. `EMBED_MODE=local` in prod.
+- Deferred this module: transcript-rail lesson player + auto-chapter render (fields + AI draft exist), SOP section diffs, team-tag assignment rules, Slack-user mapping for /handbook (doc 15), starter curriculum content.
+- Prior deferrals stand: intake drop-box (public presign), portal theme proposal (doc 14), portal Documents/Leads pages, composer suggestion accept/decline UI, review v2 diffs, custom domains, Meta metrics adapter (v1.5).
+- Route-matrix hand-extended per new route (automation still TODO). Now 316 checks.
+- Standing deploy needs: SMTP_URL, R2 creds + CORS, AUTH_SECRET, APP_ENCRYPTION_KEY, ANTHROPIC_API_KEY, HF_TOKEN, BACKUP_AGE_RECIPIENT + R2_BACKUP_*; GHL_* when leaving manual publish; SLACK_SIGNING_SECRET for /handbook.

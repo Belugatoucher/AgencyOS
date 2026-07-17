@@ -59,6 +59,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 Intelligence
               </Link>
             )}
+            {internal && (
+              <Link href="/sops" className="text-muted hover:text-foreground">
+                SOPs
+              </Link>
+            )}
+            {internal && (
+              <Link href="/academy" className="text-muted hover:text-foreground">
+                Academy
+              </Link>
+            )}
             <Link href="/accounts" className="text-muted hover:text-foreground">
               Accounts
             </Link>

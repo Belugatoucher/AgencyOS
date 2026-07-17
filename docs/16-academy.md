@@ -74,8 +74,10 @@ Weekly gap report: questions the Notebook couldn't answer well become an "SOPs w
 
 ## Build checklist
 
-- [ ] SOP CRUD + versioning + staleness engine + chunk-on-publish
-- [ ] Courses/lessons + video pipeline reuse + transcript rail + chapters
-- [ ] Assignment rules + progress + completion matrix + My Tasks/Slack surfacing
-- [ ] Quiz builder + AI draft + attempt tracking
-- [ ] Notebook chat (kb scope) + citations-to-timestamp + /handbook + gap report
+- [x] SOP CRUD + versioning + staleness engine + chunk-on-publish — publish snapshots to sop_versions, daily 06:00 sweep flags needs_review + pings the owner, heading-anchored chunks land in kb_chunks; "promote to SOP" from meeting notes or a task ships too; section-diff view deferred
+- [x] Courses/lessons + video pipeline reuse + transcript rail + chapters — lesson-media (HLS) → transcribe-lesson (whisper) → embed-lesson (timestamped kb chunks) all on the existing rails; transcript-rail player UI + auto-chapters render pass deferred (chapters field + AI chapter draft exist)
+- [x] Assignment rules + progress + completion matrix + My Tasks/Slack surfacing — rules fire on invite and immediately for current role holders, spawn idempotent My-Tasks tasks (due-date rides the existing daily digest), admin matrix people × published courses
+- [x] Quiz builder + AI draft + attempt tracking — Zod-gated quiz shape, server-side grading with attempts + failed-question rewatch evidence (evidence_ms / evidence_anchor); AI draft via prompts/course-builder.md verbatim
+- [x] Notebook chat (kb scope) + citations-to-timestamp + /handbook + gap report — read-only kb-only tool loop (scope wall to client data is structural, both directions), citations `sop:<id>#<anchor>` / `lesson:<id>@<ms>`, thin/none answers → notebook_gaps, weekly Wed gap report to Slack; /handbook via /api/slack/commands (v0 HMAC, 501 until the doc-15 Slack app is configured)
+
+Starter curriculum (the six seed tracks) is content work — record as you operate; the "Tools 101" lessons come from each module's definition-of-done walkthroughs.
