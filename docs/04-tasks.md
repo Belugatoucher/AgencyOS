@@ -48,8 +48,8 @@ POST   /api/recurring-rules
 
 ## Build checklist
 
-- [ ] Schema + CRUD + My Tasks view
-- [ ] Project board (drag between statuses)
-- [ ] Comments + mentions + notification digests
-- [ ] Recurring rules cron
-- [ ] Workload view
+- [x] Schema + CRUD + My Tasks view
+- [x] Project board (drag between statuses)
+- [x] Comments + mentions + notification digests
+- [x] Recurring rules cron
+- [x] Workload view

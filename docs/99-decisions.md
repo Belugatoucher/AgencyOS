@@ -50,6 +50,30 @@ Format:
 **Alternatives considered:** MinIO in compose — right for staging, overkill for CI smoke.
 **Revisit if:** multipart e2e coverage needs real byte assembly.
 
+## 2026-07-17 — `cron` queue for time-driven internal jobs
+**Context:** docs/00 defines five queues (media/transcribe/ai/ghl/publish) for heavy work. Recurring-task spawning and the daily digest are clock-driven and fit none of them.
+**Decision:** Added a sixth `cron` queue with two repeatable jobs — `spawn-recurring` (every 5 min) and `daily-digest` (08:00 daily). BullMQ dedupes repeatable jobs by jobId, so restarts don't stack schedules. Jobs still record `job_runs` and surface in /admin/health like every other queue.
+**Alternatives considered:** a system cron hitting an internal HTTP endpoint — bypasses the job_runs/retry rails; overloading the `ai` queue — semantically wrong.
+**Revisit if:** job volume warrants a dedicated scheduler service (e.g. a real cron container) or BullMQ's repeatable-job model proves limiting.
+
+## 2026-07-17 — Hand-rolled RRULE evaluator instead of the `rrule` package
+**Context:** Recurring rules need RRULE support; docs name FREQ=WEEKLY;BYDAY=…, monthly "every 1st", weekly prep.
+**Decision:** A ~90-line `lib/rrule.ts` covering FREQ=DAILY|WEEKLY|MONTHLY with INTERVAL, BYDAY, BYMONTHDAY, computed in UTC, with 9 unit tests. `startAt` is the first fire time; `nextOccurrence` only advances after each spawn.
+**Alternatives considered:** the `rrule` npm package — full RFC 5545 but a heavier dependency than the stated needs require.
+**Revisit if:** a rule needs BYHOUR/BYSETPOS/COUNT/UNTIL or timezone-aware expansion — then adopt `rrule` and port the tests.
+
+## 2026-07-17 — Tasks are internal-authored; clients read `client_visible` only
+**Context:** docs/04 says clients see only `client_visible` tasks "used sparingly"; it doesn't spell out client writes.
+**Decision:** All task create/update/comment operations require an internal role. Clients get read access to `client_visible` tasks in their own accounts (list filters and single-GET both enforce it); everything else is 404 for them, mutations 403. Proven by the route-matrix test.
+**Alternatives considered:** letting clients comment on their visible tasks — deferred to the portal spec (doc 11) where client interaction is designed properly.
+**Revisit if:** the portal introduces client-side task interaction.
+
+## 2026-07-17 — Route-matrix test as the CI isolation gate (audit item 5)
+**Context:** Audit item 5 demands an automated matrix proving cross-account isolation, "the highest-value test in the codebase."
+**Decision:** `tests/route-matrix.ts` (run via `pnpm test:matrix`) mints DB sessions for admin/member/client-of-A/anon and probes 14 route cases across two accounts, asserting cross-account reads are 404 and unauthorized mutations 403/401 — 56 checks. Runs against a live server.
+**Alternatives considered:** per-route unit tests — don't exercise the real auth/cookie path end to end.
+**Revisit if:** CI should fail when a *new* route lacks matrix coverage — that enforcement (a registry check) is still TODO; today the matrix must be extended by hand per new route.
+
 ## 2026-07-16 — Log created
 **Context:** Spec pack handoff; drift across Claude Code sessions needs a paper trail.
 **Decision:** All `// DECISION:` comments in code must have a matching entry here.

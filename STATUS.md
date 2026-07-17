@@ -1,47 +1,46 @@
-# STATUS — Week 1: Platform Core
+# STATUS — through Week 2: Tasks
 
 _Last session: 2026-07-17. Read this first next session (HANDOFF.md rule)._
 
-## Done (all 9 HANDOFF items)
+## Week 2 — Tasks module (docs/04) — COMPLETE
 
-1. **Scaffold** — Next.js 15 App Router, TS strict, Tailwind v4, Drizzle, BullMQ, layout per CLAUDE.md (`app/(app)/`, `lib/services/`, `lib/access.ts`, `workers/`). Minimal shadcn-style primitives in `components/ui.tsx` (swap for generated shadcn when theming lands).
-2. **Docker Compose** — app, worker, postgres:16, redis (requirepass), caddy (TLS+HSTS). DB ports unpublished in prod; `docker-compose.override.yml.example` publishes them on loopback for local dev.
-3. **Schema** — spine + files + notifications + job_runs in Drizzle; migration verified on fresh Postgres 16. Auth.js additions (sessions, verification_tokens, users.email_verified) reflected in `db/schema.sql`.
-4. **Auth** — Auth.js magic links, custom email-only adapter, invite-only sign-in, 10-min single-use tokens, per-email+per-IP rate limits, identical responses (no enumeration), 30-day DB sessions. Seed: admin `ryan@vngrd.media` (override `SEED_ADMIN_EMAIL`), 2 placeholder members, Demo Account + client user.
-5. **Access layer** — pure rules + viewer loader, 12 Vitest tests green. Cross-account denials read as 404.
-6. **Spine CRUD** — accounts/projects/users/memberships services + Zod routes + UI (accounts list/detail, team page, invite flows for members and clients).
-7. **Files** — presigned R2 PUT (multipart >100MB), 15-min presign TTL, `files` registration, browser upload component. `R2_ENDPOINT` override for MinIO/stub.
-8. **Notifications** — table + dispatcher (`notify()`), in-app bell (30s poll), Slack webhook mirror.
-9. **Health** — `/admin/health` (admin-only): queue depths, last errors, recent job_runs. Worker records every job in `job_runs` (ok/retrying/failed).
+All five build-checklist items ticked in docs/04:
 
-## Verified end-to-end (this session, real Postgres+Redis)
+- **Schema + CRUD + My Tasks** — tasks/task_checklist/task_comments/recurring_rules in Drizzle (migration 0001; tables were already in `db/schema.sql`). Task service with filters (assignee/account/project/status + due buckets overdue/today/week), priority ranking, `client_visible` read-scoping. My Tasks view buckets overdue/today/this-week/later.
+- **Project board** — kanban per account/project at `/tasks/board`, HTML5 drag between the five statuses with optimistic column moves.
+- **Comments + mentions + digests** — threaded-once comments; `@email` mentions notify; notify-on-assign; daily per-member Slack+bell digest (overdue/today/awaiting-review), one notification per member not per-task.
+- **Recurring rules cron** — `lib/rrule.ts` evaluator (daily/weekly/monthly, 9 tests); `spawn-recurring` repeatable job every 5 min; `POST /api/recurring-rules`.
+- **Workload** — est-hours-due-this-week per member with green/yellow/red load bar at `/tasks/workload`.
+- **Account view** — open-tasks card on the account detail page (status-call agenda).
 
-Magic-link login as admin → create account → create project → invite member (team page) → invite client contact (account page) → upload file via presigned URL → file listed → `/admin/health` renders queue + job data. Client-role probes: sees only own account; cross-account GETs → 404; mutations → 403; anonymous → 401. Job pipeline: heartbeat ok; unknown job records `retrying`→`failed` rows with errors. Playwright smoke (2 tests) covers the definition-of-done path + magic-link single-use.
+Routes: `GET/POST /api/tasks`, `GET/PATCH /api/tasks/:id`, `POST /api/tasks/:id/comments`, `POST/PATCH /api/tasks/:id/checklist[...]`, `GET/POST /api/recurring-rules`. Members now land on My Tasks; clients still land on Accounts.
 
-## How to run
+### New this week
+- **Route-matrix test (audit item 5)** — `pnpm test:matrix` → `tests/route-matrix.ts`. Mints DB sessions for admin/member/client-of-A/anon and probes 14 route cases across two accounts (56 checks). This is the isolation gate the audit calls the highest-value test.
+- **`cron` queue** — sixth BullMQ queue for clock-driven internal jobs (recurring + digest); records job_runs, surfaces in /admin/health.
 
+### Bugs caught & fixed during verification
+- Unknown/no-op task status updates produced an empty Drizzle patch → 500. `updateTask` now returns the task unchanged when nothing differs. (Caught by route-matrix.)
+- Recurring `startAt` was pushed a full interval into the future; it's now the first fire time, with `nextOccurrence` only advancing after each spawn. (Caught driving the job directly.)
+
+## Verified this session (real Postgres + Redis)
+- Unit: 21 pass (access rules 12, rrule 9). E2e: 3 pass (week-1 path, magic-link single-use, tasks flow). Route-matrix: 56/56.
+- Drove recurring spawn (1 task created, source=recurring) and digest (overdue task counted) directly against the DB.
+
+## How to run (unchanged from week 1, plus)
 ```bash
-cp .env.example .env   # fill DATABASE_URL/REDIS_URL/AUTH_SECRET at minimum
-pnpm install
-pnpm db:migrate && pnpm db:seed
-pnpm dev               # app
-pnpm worker            # BullMQ workers
-# tests
-pnpm test              # vitest (access rules)
-pnpm build && pnpm test:e2e   # playwright smoke (uses .dev-mail + tests/s3-stub.ts)
-# CHROMIUM_PATH=/path/to/chromium pnpm test:e2e  # if using a system browser
+pnpm test          # vitest: access + rrule
+pnpm test:matrix   # route-matrix (needs running app + DB)
+pnpm build && pnpm test:e2e   # playwright (CHROMIUM_PATH=/opt/pw-browsers/chromium in this env)
+pnpm worker        # includes cron schedules (spawn-recurring, daily-digest)
 ```
+Local infra note: in this container Postgres/Redis are reclaimed between idle periods — restart with `pg_ctl ... start` and `redis-server --daemonize yes` (see scratchpad env.sh). In production they're managed Docker Compose services.
 
-No SMTP? Magic links land in `.dev-mail/last-link.txt` (dev only; prod requires SMTP_URL).
+## Next (Week 3 — Leads, manual-first, docs/02)
+- Pipelines/stages CRUD, lead cards + kanban/table/drawer, CSV import + public intake endpoint (audit item 6: Turnstile+honeypot+rate limits), all-accounts overview, AI scoring (prompts/lead-scoring.md). GHL connector deferred (doc 02 appendix).
+- The meeting→task bridge (`source=meeting`) and review→task bridge land with Notes (wk6) and Review (wk5); task `source`/`source_id` columns already support them.
 
-## Next (Week 2 — Tasks module, docs/04)
-
-- Full Tasks module per docs/04-tasks.md.
-- Route-matrix CI test (audit item 5) — the curl probes above should become an automated matrix run in CI before more routes land.
-- Real R2: create bucket + CORS rule (allow PUT from APP_URL, expose ETag) — see decisions log.
-
-## Blocking / needs Ryan
-
-- Confirm seed admin email (`ryan@vngrd.media` assumed from session; `SEED_ADMIN_EMAIL` overrides).
-- Real env values when deploying: SMTP_URL, R2 creds, AUTH_SECRET, APP_ENCRYPTION_KEY.
-- Placeholder member emails in seed (`dana@example.com`, `sam@example.com`) — replace with real team.
+## Carrying forward / needs Ryan
+- Route-matrix currently must be extended by hand per new route; automating "new route without coverage fails CI" is still TODO.
+- Same env values still needed for deploy: SMTP_URL, R2 creds + bucket CORS (PUT from APP_URL, expose ETag), AUTH_SECRET, APP_ENCRYPTION_KEY.
+- Placeholder member emails in seed (`dana@`, `sam@example.com`) — replace with real team.
