@@ -14,6 +14,18 @@ Format:
 
 ---
 
+## 2026-07-17 — Scheduler publishes manual-first; GHL is a pluggable adapter behind creds
+**Context:** docs/06 publishes through GHL's Social Planner, but GHL is deferred until we have it (same posture as the Leads GHL connector). The planning/approval brain must be fully usable now.
+**Decision:** `lib/scheduler/publish.ts` defines a `PublishAdapter` interface. The default `manualAdapter` marks a due post `published` (the team posts by hand; the calendar is the plan-of-record) — manual-first, like Leads. `PUBLISH_MODE=ghl` + GHL creds swap in the `ghlAdapter` (the single rewrite point per the doc; currently a stub that errors clearly). A `cron` `publish-sweep` every 2 min enqueues `publish-post` jobs for due `scheduled` posts; failures flip status to `failed` and page Slack.
+**Alternatives considered:** blocking the whole module on GHL — leaves the calendar unusable for months; building direct Meta/TikTok APIs — the doc explicitly rejects this.
+**Revisit if:** GHL arrives — implement `ghlAdapter.publish` (create post in the sub-account, attach media URLs, poll for permalink) and set `PUBLISH_MODE=ghl`.
+
+## 2026-07-17 — Media validation at draft time; channel limits in one module
+**Context:** docs/06 wants per-channel constraints (IG media, caption limits) checked at draft, not at publish failure.
+**Decision:** `lib/scheduler/channels.ts` holds the channel rules (body limits, IG/TikTok media-required) and `validatePost`; the posts service attaches `issues[]` to every returned post and hard-blocks the `scheduled` transition while any issue exists. Six unit tests cover it.
+**Alternatives considered:** validating only at publish — the spec explicitly wants earlier feedback.
+**Revisit if:** GHL exposes authoritative per-account channel constraints — fold them in.
+
 ## 2026-07-17 — Notes transcription: configurable Python worker, on-box, degrades gracefully
 **Context:** docs/03 requires faster-whisper (large-v3 int8) + pyannote diarization on our own box; audio must never leave our infra (only text goes to Claude).
 **Decision:** `lib/transcribe/index.ts` shells out to `scripts/transcribe.py` (overridable via `TRANSCRIBE_CMD`/`TRANSCRIBE_SCRIPT`), which runs faster-whisper + pyannote and emits diarized segments JSON. The transcribe job pulls audio from R2, runs the script in a temp dir, writes the transcript, and enqueues the `ai` meeting-notes job. `Dockerfile.worker` apt-installs python3 + pip-installs the deps. Without `HF_TOKEN`, diarization degrades to a single `SPEAKER_00` so notes still generate.

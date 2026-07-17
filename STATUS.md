@@ -1,39 +1,40 @@
-# STATUS — through Week 6: Notes
+# STATUS — through Week 7: Scheduler
 
 _Last session: 2026-07-17. Read this first next session (HANDOFF.md rule)._
 
-## Week 6 — Notes (docs/03) — COMPLETE
-Private AI note taker: record/upload a meeting, transcribe on-box, turn it into structured notes + action items + CRM context.
+## Week 7 — Scheduler (docs/06) — COMPLETE (manual-first; GHL adapter deferred)
+Plan, draft, approve, and publish social content per client from one calendar.
 
-- **Capture** — upload audio/video onto a meeting; `/record` in-person page (MediaRecorder, all-party-consent notice, 30s chunk backup to R2, full recording finalized on stop).
-- **Pipeline** (audio never leaves our infra; only text goes to Claude): attach audio → `transcribe` job runs `scripts/transcribe.py` (faster-whisper large-v3 int8 + pyannote diarization) → writes diarized segments → `ai` `meeting-notes` job runs Claude with `prompts/meeting-notes.md` verbatim → Zod-gated JSON with one retry → owner fuzzy-match + due-date clamp → attendee→lead auto-link → write `meeting_notes`, flip status ready, notify.
-- **Meeting page** — synced audio player (click a transcript line → seek), speaker rename, summary + decisions, action-items panel with checkbox → bulk-create Tasks (`source=meeting`), status polling while processing.
-- **Search** — Postgres full-text across all transcripts with `ts_headline` snippets.
-- **Privacy** — `client_visible` defaults false; internal-only routes; retention setting per meeting (keep/90d/transcript_only); recording-consent reminder on `/record`.
+- **Calendar** — month grid per-account and an all-accounts master view; posts colored by status; ghost cards render each content slot's owed occurrences that have no post that day.
+- **Composer** — channel multi-select, default body + per-channel overrides, media picker from the account's asset library (records `asset_usage`), scheduled time, approval toggle, live per-channel validation issues (IG/TikTok media-required, caption limits, body caps — checked at draft, not publish).
+- **Approval** — `approval_required` gates the `scheduled` transition (hard stop, no approval → no publish); approvers are internal or a client member of the account (the portal reuses the same route).
+- **Publish** — pluggable adapter: **manual-first default** marks a due post published (team posts by hand, calendar is the plan-of-record); `PUBLISH_MODE=ghl` + GHL creds swap in the GHL Social Planner adapter (deferred, the single rewrite point). A `cron` `publish-sweep` (every 2 min) enqueues `publish-post` jobs for due posts; failures flip to `failed` and page Slack.
+- **AI drafting** — "Draft with AI" runs `prompts/content-repurpose.md` verbatim against a source (transcript/blog/bullets), Zod-gated, pre-fills per-channel overrides; a human always reviews.
+- **Content slots** — recurring RRULE slots per account drive the ghost cards.
 
-Routes: `GET/POST /api/meetings`, `GET /api/meetings/:id`, `POST/GET /api/meetings/:id/audio`, `POST /api/meetings/:id/chunks`, `PATCH …/speakers`, `POST …/reprocess`, `POST …/tasks`, `GET /api/meetings/search`. Nav: Notes tab.
+Routes: `GET/POST /api/posts`, `GET/PATCH /api/posts/:id`, `POST /api/posts/:id/approval`, `POST /api/posts/:id/ai-draft`, `GET/POST /api/content-slots`, `GET /api/content-slots/ghosts`. Nav: Calendar tab.
 
 ## Verified this session (real Postgres + Redis)
-- Unit: **40 pass** (access 12, rrule 9, lead-scoring 5, lead-intake 7, ffmpeg 3, meeting-notes 4). E2e: **7 pass** (week-1, magic-link, tasks, leads, assets, review, notes). Route-matrix: **144/144** (+20 meeting cases: Notes internal-only — client 403 on list/create/search, 404 cross-account meeting; anon 401).
-- Against a seeded transcript: full-text search hit on "budget", action-items→tasks bridge (creates a task, marks `task_id`, idempotent — index 1 stays unlinked), speaker rename.
-- **Pipeline proven end-to-end for wiring:** `transcribe-meeting` reaches the R2 audio fetch and `meeting-notes` reaches the Claude call, both failing loudly into `job_runs`. Real transcripts/notes need the worker image's Python deps (whisper/pyannote) + `ANTHROPIC_API_KEY` + real R2. See decisions log.
+- Unit: **46 pass** (+6 channel validation). E2e: **8 pass** (+scheduler composer). Route-matrix: **164/164** (+20 post/slot cases: account-scoped, client of A 404 cross-account / 403 create, anon 401).
+- Full flow by curl: IG-no-media flagged; scheduling blocked while issues exist; approval gate (request → approve → schedule); ghost cards (6 TU/TH occurrences over 3 weeks). **Publish proven end-to-end:** the sweep found the due `scheduled` post and the manual adapter marked it `published` (job_runs ok) — no GHL needed in manual mode.
+- AI drafting wiring is identical to lead-scoring/notes (fails loudly without `ANTHROPIC_API_KEY`).
 
 ## How to run (unchanged, plus)
 ```bash
-pnpm test          # 40 unit
-pnpm test:matrix   # 144-check route matrix (needs running app + DB)
-pnpm build && pnpm test:e2e   # 7 playwright specs
-pnpm worker        # media, transcribe (whisper), ai (score-lead, meeting-notes), cron
+pnpm test          # 46 unit
+pnpm test:matrix   # 164-check route matrix (needs running app + DB)
+pnpm build && pnpm test:e2e   # 8 playwright specs
+pnpm worker        # media, transcribe, ai (score-lead, meeting-notes), publish (publish-post), cron (…, publish-sweep)
 ```
-Notes transcription needs the worker Docker image (python3 + faster-whisper + pyannote; `HF_TOKEN` for diarization) + `ANTHROPIC_API_KEY` + real R2. Locally, point `R2_ENDPOINT` at MinIO and set `TRANSCRIBE_CMD` if whisper lives elsewhere.
+Publishing works today in manual mode. Set `PUBLISH_MODE=ghl` + `GHL_*` creds once GHL exists (adapter stub is in `lib/scheduler/publish.ts`).
 
 ## Next (Weeks 8-9 — Intelligence + Metrics, docs/08 + docs/09)
-Week 7 (Scheduler) is the roadmap's next module, but Intelligence/Metrics may be prioritized — check the roadmap. Intelligence needs pgvector + an embedding worker (new rail), the hooks DB, research pipeline, per-client Brain (RAG with read-only tools — audit item 8), and Ask-the-Brain chat with citations. Metrics: CSV importer + rollups + is_winning compute (docs/09). The `ai` queue, RAG-scope walls, and the Zod-gated extraction pattern from Notes/Leads are the templates; `db/002-intelligence.sql` defines the tables.
+This introduces the RAG rail. Intelligence needs **pgvector + an embedding worker** (new infra — add the pgvector extension + a `media`-style embed job), the hooks DB (PWA share-target capture), a research pipeline, the per-client **Brain** (RAG with **read-only tools only** — audit item 8), and Ask-the-Brain chat with retrieval + citations (scope walls: client Brain ↔ handbook, cross-client anonymization). Metrics (docs/09): CSV importer + rollups + `is_winning` compute feeding Intelligence. Tables are in `db/002-intelligence.sql`. The `ai` queue, the Zod-gated extraction pattern, and the manual-first adapter posture are the templates.
 
 ## Carrying forward / needs Ryan
-- **AI-dependent features need `ANTHROPIC_API_KEY`**: lead scoring, meeting notes. Transcription needs whisper/pyannote (worker image) + `HF_TOKEN`.
-- Media + transcription verified for wiring only in this env (no full ffmpeg/whisper, no real R2). First deploy should transcribe a real clip end to end.
-- Transcript search is computed at query time; add the stored tsvector column + GIN index at scale (SQL file already specifies it).
-- Portal (doc 11, wk10) exposes client-facing views; `client_visible` honored server-side across Review/Assets/Notes.
-- Route-matrix hand-extended per new route (automation still TODO). Now 144 checks.
-- Standing deploy needs: SMTP_URL, R2 creds + CORS, AUTH_SECRET, APP_ENCRYPTION_KEY, ANTHROPIC_API_KEY, HF_TOKEN.
+- **AI features need `ANTHROPIC_API_KEY`**: lead scoring, meeting notes, content drafting. Transcription needs whisper/pyannote (worker image) + `HF_TOKEN`. Publishing needs GHL only when you leave manual mode.
+- Media + transcription verified for wiring only in this env (no full ffmpeg/whisper, no real R2). First deploy: transcode a clip, transcribe a clip, publish a post.
+- Scheduler week view + GHL publish adapter are the remaining Scheduler post-MVP items.
+- Portal (doc 11, wk10) exposes client-facing views; `client_visible` honored server-side across all modules; post approval already accepts a client member.
+- Route-matrix hand-extended per new route (automation still TODO). Now 164 checks.
+- Standing deploy needs: SMTP_URL, R2 creds + CORS, AUTH_SECRET, APP_ENCRYPTION_KEY, ANTHROPIC_API_KEY, HF_TOKEN; GHL_* when leaving manual publish.

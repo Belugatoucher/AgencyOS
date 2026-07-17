@@ -49,9 +49,9 @@ POST   /api/content-slots
 
 ## Build checklist
 
-- [ ] Schema + calendar UI (month/week, per-account + master)
-- [ ] Composer with per-channel overrides + asset picker + validation
-- [ ] Approval flow incl. client portal card
-- [ ] GHL Social Planner adapter + publish worker + failure paging
-- [ ] Content slots + ghost cards
-- [ ] AI drafting
+- [x] Schema + calendar UI (month, per-account + master) — week view is post-MVP
+- [x] Composer with per-channel overrides + asset picker + validation
+- [x] Approval flow incl. client portal card — internal + client-member approve; the portal surface (doc 11, wk10) reuses the same route
+- [x] GHL Social Planner adapter + publish worker + failure paging — publish worker + due-post sweep + Slack paging ship now; a pluggable manual-first adapter publishes today, the GHL adapter is behind PUBLISH_MODE=ghl + creds (deferred)
+- [x] Content slots + ghost cards
+- [x] AI drafting
