@@ -11,6 +11,7 @@ import {
   meetings,
   memberships,
   pipelines,
+  posts,
   reviewItems,
   sessions,
   shareLinks,
@@ -45,6 +46,7 @@ type Fixture = {
   reviewItemB: string; // review item in B
   shareToken: string; // public share link to reviewItemB (no PIN)
   meetingB: string; // meeting in B
+  postB: string; // post in B
   cookies: Record<"admin" | "member" | "clientA" | "anon", string | null>;
 };
 
@@ -131,6 +133,12 @@ async function setup(): Promise<Fixture> {
     .values({ accountId: b!.id, title: "B standup", occurredAt: new Date() })
     .returning();
 
+  // A post in account B.
+  const [postB] = await db
+    .insert(posts)
+    .values({ accountId: b!.id, channels: ["linkedin"], body: "B post", status: "draft" })
+    .returning();
+
   return {
     accountA: a!.id,
     accountB: b!.id,
@@ -143,6 +151,7 @@ async function setup(): Promise<Fixture> {
     reviewItemB: reviewItemB!.id,
     shareToken,
     meetingB: meetingB!.id,
+    postB: postB!.id,
     cookies: {
       admin: await mintSession(adminId),
       member: await mintSession(memberId),
@@ -399,6 +408,40 @@ const CASES: Case[] = [
     method: "GET",
     path: () => "/api/meetings/search?q=budget",
     expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  // ===== Scheduler (account-scoped; clients read own + approve via portal) =====
+  {
+    name: "GET posts in account B (client of A: not found)",
+    method: "GET",
+    path: (f) => `/api/posts?account=${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST post (clients cannot create)",
+    method: "POST",
+    path: () => "/api/posts",
+    body: (f) => ({ accountId: f.accountA, channels: ["linkedin"], body: "probe" }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET post in B (client of A refused)",
+    method: "GET",
+    path: (f) => `/api/posts/${f.postB}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "PATCH post in B (client of A refused)",
+    method: "PATCH",
+    path: (f) => `/api/posts/${f.postB}`,
+    body: () => ({ body: "hacked" }),
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST content slot (clients cannot create)",
+    method: "POST",
+    path: () => "/api/content-slots",
+    body: (f) => ({ accountId: f.accountA, rrule: "FREQ=WEEKLY;BYDAY=TU", channels: ["instagram"] }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
   },
 ];
 
