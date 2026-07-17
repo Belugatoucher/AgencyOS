@@ -25,9 +25,25 @@ create table projects (
 create table users (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
-  name text not null,
+  name text not null default '',         -- '' until invite/profile fills it (Auth.js creates by email)
   role text not null default 'member',   -- admin|member|client
+  email_verified timestamptz,            -- Auth.js: set on first magic-link login
   created_at timestamptz not null default now()
+);
+
+-- Auth.js support (magic links, database sessions). Email-only provider via a
+-- custom adapter — no oauth accounts table (avoids collision with domain `accounts`).
+create table sessions (
+  session_token text primary key,
+  user_id uuid not null references users(id),
+  expires timestamptz not null
+);
+
+create table verification_tokens (
+  identifier text not null,
+  token text not null,
+  expires timestamptz not null,
+  primary key (identifier, token)
 );
 
 create table memberships (
