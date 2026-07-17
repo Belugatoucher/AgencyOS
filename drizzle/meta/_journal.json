@@ -29,6 +29,13 @@
       "when": 1784315653220,
       "tag": "0003_organic_leopardon",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784318008970,
+      "tag": "0004_glorious_shinko_yamashiro",
+      "breakpoints": true
     }
   ]
 }

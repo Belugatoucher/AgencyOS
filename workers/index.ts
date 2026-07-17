@@ -8,6 +8,8 @@ import { sendDailyDigests } from "../lib/services/digest";
 import { applyLeadScore, scoreLead } from "../lib/services/lead-scoring";
 import { processAssetThumbnail, processReviewVersion } from "../lib/media/jobs";
 import { flagExpiringAssets } from "../lib/services/asset-rights";
+import { transcribeMeeting } from "../lib/transcribe";
+import { applyNotes, generateNotes } from "../lib/services/meeting-notes";
 
 // Worker skeleton: every queue gets a Worker whose processors dispatch by job
 // name and always record a job_runs row (docs/00 — failures surface in
@@ -28,7 +30,13 @@ const processors: Record<QueueName, Record<string, Processor>> = {
       return processReviewVersion(versionId);
     },
   },
-  transcribe: {},
+  transcribe: {
+    // faster-whisper + pyannote → diarized segments, then enqueue notes (docs/03)
+    async "transcribe-meeting"(job) {
+      const { meetingId } = job.data as { meetingId: string };
+      return transcribeMeeting(meetingId);
+    },
+  },
   ai: {
     // trivially verifiable job so the pipeline can be exercised end-to-end
     async heartbeat() {
@@ -41,6 +49,13 @@ const processors: Record<QueueName, Record<string, Processor>> = {
       const score = await scoreLead(leadId);
       await applyLeadScore(leadId, score);
       return { leadId, score: score.score, band: score.band };
+    },
+    // Meeting notes from a diarized transcript (docs/03)
+    async "meeting-notes"(job) {
+      const { meetingId } = job.data as { meetingId: string };
+      const notes = await generateNotes(meetingId);
+      await applyNotes(meetingId, notes);
+      return { meetingId, actionItems: notes.action_items.length };
     },
   },
   ghl: {},

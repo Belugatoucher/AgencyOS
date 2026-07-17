@@ -302,6 +302,42 @@ export const shareLinks = pgTable("share_links", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ===== Notes (db/schema.sql, docs/03) =====
+
+export const meetings = pgTable("meetings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").references(() => accounts.id),
+  projectId: uuid("project_id").references(() => projects.id),
+  leadId: uuid("lead_id").references(() => leads.id),
+  title: text("title").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  attendees: jsonb("attendees").notNull().default([]), // [{name,email?}]
+  audioFileId: uuid("audio_file_id").references(() => files.id),
+  retention: text("retention").notNull().default("keep"), // keep|90d|transcript_only
+  clientVisible: boolean("client_visible").notNull().default(false),
+  status: text("status").notNull().default("uploaded"), // uploaded|transcribing|summarizing|ready|failed
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// DECISION: the base schema.sql defines a stored tsvector generated column +
+// GIN index on transcripts. Drizzle-kit doesn't model generated tsvector cleanly,
+// so we compute to_tsvector at query time for now (correct, fine for current
+// volume). Add the stored column + GIN index as a follow-up migration at scale.
+export const transcripts = pgTable("transcripts", {
+  meetingId: uuid("meeting_id").primaryKey().references(() => meetings.id),
+  segments: jsonb("segments").notNull(), // [{start_ms,end_ms,speaker,text}]
+  speakers: jsonb("speakers").notNull().default({}), // {"SPEAKER_00":"Dana"}
+});
+
+export const meetingNotes = pgTable("meeting_notes", {
+  meetingId: uuid("meeting_id").primaryKey().references(() => meetings.id),
+  summary: text("summary"),
+  decisions: jsonb("decisions").default([]),
+  actionItems: jsonb("action_items").default([]), // [{text,owner_guess,due_guess,task_id?}]
+  followups: jsonb("followups").default([]),
+  raw: jsonb("raw"),
+});
+
 // ===== Ops =====
 
 export const notifications = pgTable(
@@ -374,3 +410,6 @@ export type ReviewVersion = typeof reviewVersions.$inferSelect;
 export type ReviewComment = typeof reviewComments.$inferSelect;
 export type ReviewApproval = typeof reviewApprovals.$inferSelect;
 export type ShareLink = typeof shareLinks.$inferSelect;
+export type Meeting = typeof meetings.$inferSelect;
+export type Transcript = typeof transcripts.$inferSelect;
+export type MeetingNotes = typeof meetingNotes.$inferSelect;
