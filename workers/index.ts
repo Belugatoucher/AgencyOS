@@ -11,6 +11,7 @@ import { flagExpiringAssets } from "../lib/services/asset-rights";
 import { transcribeMeeting } from "../lib/transcribe";
 import { applyNotes, generateNotes } from "../lib/services/meeting-notes";
 import { enqueueDuePosts, publishPost } from "../lib/scheduler/publish";
+import { embedResearchDoc } from "../lib/services/research";
 
 // Worker skeleton: every queue gets a Worker whose processors dispatch by job
 // name and always record a job_runs row (docs/00 — failures surface in
@@ -57,6 +58,11 @@ const processors: Record<QueueName, Record<string, Processor>> = {
       const notes = await generateNotes(meetingId);
       await applyNotes(meetingId, notes);
       return { meetingId, actionItems: notes.action_items.length };
+    },
+    // Research doc → chunks + embeddings for retrieval (docs/08)
+    async "embed-research"(job) {
+      const { docId } = job.data as { docId: string };
+      return embedResearchDoc(docId);
     },
   },
   ghl: {},

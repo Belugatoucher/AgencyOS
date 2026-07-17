@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -11,6 +12,7 @@ import {
   timestamp,
   unique,
   uuid,
+  vector,
 } from "drizzle-orm/pg-core";
 
 // ===== Spine (db/schema.sql) =====
@@ -379,6 +381,131 @@ export const meetingNotes = pgTable("meeting_notes", {
   raw: jsonb("raw"),
 });
 
+// ===== Intelligence (db/002-intelligence.sql, docs/08) =====
+
+export const hooks = pgTable("hooks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").references(() => accounts.id), // null = global library
+  text: text("text").notNull(),
+  format: text("format").notNull(), // question|callout|stat|story_open|contrarian|pain|curiosity|social_proof
+  platform: text("platform"),
+  nicheTags: text("niche_tags").array().notNull().default(sql`'{}'`),
+  source: text("source").notNull().default("manual"), // manual|swipe|our_ad|organic|import
+  sourceUrl: text("source_url"),
+  metrics: jsonb("metrics"),
+  embedding: vector("embedding", { dimensions: 384 }),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const creatives = pgTable("creatives", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  assetIds: uuid("asset_ids").array().notNull().default(sql`'{}'`),
+  platform: text("platform").notNull(),
+  metrics: jsonb("metrics").notNull().default({}), // hook_rate, hold_rate, ctr, cpm, cpa, roas
+  spendCents: bigint("spend_cents", { mode: "number" }).notNull().default(0),
+  isWinning: boolean("is_winning").notNull().default(false), // computed
+  learning: text("learning"),
+  embedding: vector("embedding", { dimensions: 384 }),
+  periodStart: date("period_start"),
+  periodEnd: date("period_end"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const researchDocs = pgTable("research_docs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").references(() => accounts.id), // null = general market research
+  kind: text("kind").notNull(), // competitor|audience|voc|trend|strategy
+  title: text("title").notNull(),
+  fileId: uuid("file_id").references(() => files.id),
+  rawText: text("raw_text"),
+  status: text("status").notNull().default("processing"), // processing|ready|failed
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const researchChunks = pgTable("research_chunks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  docId: uuid("doc_id")
+    .notNull()
+    .references(() => researchDocs.id, { onDelete: "cascade" }),
+  chunkText: text("chunk_text").notNull(),
+  position: integer("position").notNull(),
+  embedding: vector("embedding", { dimensions: 384 }),
+});
+
+export const clientBrains = pgTable("client_brains", {
+  accountId: uuid("account_id").primaryKey().references(() => accounts.id),
+  offer: text("offer"),
+  icp: text("icp"),
+  positioning: text("positioning"),
+  voice: jsonb("voice").default({}), // {do:[], dont:[], samples:[]}
+  objections: jsonb("objections").default([]),
+  proofPoints: jsonb("proof_points").default([]), // the ONLY claims source
+  complianceNos: jsonb("compliance_nos").default([]), // hard blocks
+  goalsCurrentQuarter: text("goals_current_quarter"),
+  learnings: jsonb("learnings").default([]), // [{text, source, added_at}]
+  version: integer("version").notNull().default(1),
+  updatedBy: uuid("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const brainVersions = pgTable("brain_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  version: integer("version").notNull(),
+  snapshot: jsonb("snapshot").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const brainSuggestions = pgTable("brain_suggestions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  field: text("field").notNull(), // learnings|objections|...
+  proposed: jsonb("proposed").notNull(),
+  source: text("source").notNull(), // meeting|creative
+  sourceId: uuid("source_id"),
+  status: text("status").notNull().default("pending"), // pending|accepted|rejected
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const aiThreads = pgTable("ai_threads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  title: text("title"),
+  messages: jsonb("messages").notNull().default([]),
+  retrievalIds: jsonb("retrieval_ids").notNull().default([]), // audit trail
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ===== Metrics (db/007-metrics.sql, docs/09) =====
+
+export const metricSources = pgTable("metric_sources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  kind: text("kind").notNull(), // meta|tiktok|ga4|ghl|csv
+  config: jsonb("config").notNull().default({}), // saved column mappings etc.
+  lastPulledAt: timestamp("last_pulled_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const metricRows = pgTable(
+  "metric_rows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceId: uuid("source_id").notNull().references(() => metricSources.id),
+    externalId: text("external_id").notNull(),
+    entityKind: text("entity_kind").notNull(), // ad|adset|campaign|post
+    date: date("date").notNull(),
+    metrics: jsonb("metrics").notNull().default({}),
+    creativeMatch: uuid("creative_match").references(() => creatives.id),
+  },
+  // re-import is idempotent: upsert on source + external_id + date (docs/09)
+  (t) => [unique("metric_rows_source_ext_date").on(t.sourceId, t.externalId, t.date)],
+);
+
 // ===== Ops =====
 
 export const notifications = pgTable(
@@ -457,3 +584,12 @@ export type MeetingNotes = typeof meetingNotes.$inferSelect;
 export type Post = typeof posts.$inferSelect;
 export type PostApproval = typeof postApprovals.$inferSelect;
 export type ContentSlot = typeof contentSlots.$inferSelect;
+export type Hook = typeof hooks.$inferSelect;
+export type Creative = typeof creatives.$inferSelect;
+export type ResearchDoc = typeof researchDocs.$inferSelect;
+export type ResearchChunk = typeof researchChunks.$inferSelect;
+export type ClientBrain = typeof clientBrains.$inferSelect;
+export type BrainSuggestion = typeof brainSuggestions.$inferSelect;
+export type AiThread = typeof aiThreads.$inferSelect;
+export type MetricSource = typeof metricSources.$inferSelect;
+export type MetricRow = typeof metricRows.$inferSelect;

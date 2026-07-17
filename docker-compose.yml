@@ -34,7 +34,9 @@ services:
     networks: [internal]
 
   postgres:
-    image: postgres:16
+    # pgvector build of postgres 16 — the Intelligence module (docs/08) needs
+    # the vector extension; migration 0006 runs CREATE EXTENSION vector.
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: agencyos

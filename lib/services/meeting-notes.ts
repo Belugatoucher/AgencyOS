@@ -205,6 +205,14 @@ export async function applyNotes(meetingId: string, notes: Notes): Promise<void>
 
   await db.update(meetings).set({ status: "ready" }).where(eq(meetings.id, meetingId));
 
+  // Meeting → Brain bridge (docs/08): decisions become pending Brain-learning
+  // suggestions for the meeting's account. Humans accept/reject — the Brain
+  // never self-edits silently.
+  if (meeting.accountId && notes.decisions.length) {
+    const { suggestFromMeeting } = await import("@/lib/services/brain");
+    await suggestFromMeeting(meeting.accountId, meetingId, notes.decisions);
+  }
+
   // Notify internal users of the account.
   const recipients = candidates.map((c) => c.id);
   void notify(recipients, {

@@ -7,6 +7,9 @@ RUN corepack enable && apt-get update \
   && rm -rf /var/lib/apt/lists/*
 # Transcription deps (large; pinned in production). HF_TOKEN enables pyannote.
 RUN pip3 install --no-cache-dir --break-system-packages faster-whisper pyannote.audio
+# Embeddings (docs/08): bge-small runs locally so client data stays on-box.
+# Set EMBED_MODE=local to use it (dev/CI default is the hash embedder).
+RUN pip3 install --no-cache-dir --break-system-packages sentence-transformers
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile

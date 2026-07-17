@@ -43,6 +43,13 @@
       "when": 1784319060160,
       "tag": "0005_broken_mandarin",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784320042420,
+      "tag": "0006_complex_senator_kelly",
+      "breakpoints": true
     }
   ]
 }
