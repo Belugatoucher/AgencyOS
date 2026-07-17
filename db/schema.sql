@@ -10,6 +10,7 @@ create table accounts (
   ghl_location_id text unique,           -- GHL sub-account anchor
   timezone text not null default 'America/New_York',
   brand jsonb not null default '{}',     -- colors, boilerplate
+  portal_digest text not null default 'weekly', -- weekly|off (doc 11 client digest)
   created_at timestamptz not null default now(),
   deleted_at timestamptz
 );
@@ -103,6 +104,7 @@ create table review_comments (
   suggestion jsonb,                      -- {current, proposed} for text changes
   region jsonb,                          -- {x,y,w,h} for stills
   drawing jsonb,                         -- SVG path data
+  internal boolean not null default false, -- internal thread: role-filtered from clients/guests (doc 11)
   body text not null,
   resolved_at timestamptz,
   created_at timestamptz not null default now()
@@ -315,6 +317,7 @@ create table post_approvals (
   decided_by uuid references users(id),
   guest_name text,
   comment text,
+  suggestions jsonb not null default '[]', -- [{current, proposed}] line edits (doc 11: rejections carry anchored suggestions)
   created_at timestamptz not null default now()
 );
 

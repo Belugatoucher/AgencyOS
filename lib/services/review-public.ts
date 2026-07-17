@@ -57,7 +57,8 @@ export async function buildPublicItem(item: ReviewItem, link: ShareLink): Promis
         mediaUrl: await signOrNull(v.r2Key),
         hlsUrl: await signOrNull(v.version.hlsKey),
         thumbUrl: await signOrNull(v.version.thumbKey),
-        comments: await listComments(v.version.id),
+        // guests never see internal threads (docs/11 role filter)
+        comments: (await listComments(v.version.id)).filter((c) => !c.internal),
         approval: approval
           ? { decision: approval.decision, guestName: approval.guestName, createdAt: approval.createdAt }
           : null,

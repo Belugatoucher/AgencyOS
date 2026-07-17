@@ -26,6 +26,7 @@ export const accounts = pgTable("accounts", {
   // Leads (db/006-leads-manual.sql)
   leadMode: text("lead_mode").notNull().default("manual"), // manual|ghl
   portalLeads: text("portal_leads").notNull().default("off"), // off|summary|full
+  portalDigest: text("portal_digest").notNull().default("weekly"), // weekly|off (doc 11)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
@@ -276,6 +277,7 @@ export const reviewComments = pgTable("review_comments", {
   suggestion: jsonb("suggestion"), // {current, proposed}
   region: jsonb("region"), // {x,y,w,h}
   drawing: jsonb("drawing"), // SVG path data
+  internal: boolean("internal").notNull().default(false), // role-filtered from clients/guests (doc 11)
   body: text("body").notNull(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -334,6 +336,7 @@ export const postApprovals = pgTable("post_approvals", {
   decidedBy: uuid("decided_by").references(() => users.id),
   guestName: text("guest_name"),
   comment: text("comment"),
+  suggestions: jsonb("suggestions").notNull().default([]), // [{current, proposed}] (doc 11)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -480,6 +483,25 @@ export const aiThreads = pgTable("ai_threads", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ===== Onboarding (db/003-theming-slack-extras.sql, docs/10) =====
+
+export const intakeForms = pgTable("intake_forms", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  token: text("token").notNull().unique(),
+  sections: jsonb("sections").notNull().default({}), // client answers, saved partially
+  status: text("status").notNull().default("sent"), // sent|in_progress|submitted|committed
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const projectTemplates = pgTable("project_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  taskSet: jsonb("task_set").notNull().default([]), // [{title, description?, offset_days?, client_visible?}]
+  defaultSlots: jsonb("default_slots").notNull().default([]), // [{rrule, channels}]
+});
+
 // ===== Metrics (db/007-metrics.sql, docs/09) =====
 
 export const metricSources = pgTable("metric_sources", {
@@ -593,3 +615,5 @@ export type BrainSuggestion = typeof brainSuggestions.$inferSelect;
 export type AiThread = typeof aiThreads.$inferSelect;
 export type MetricSource = typeof metricSources.$inferSelect;
 export type MetricRow = typeof metricRows.$inferSelect;
+export type IntakeForm = typeof intakeForms.$inferSelect;
+export type ProjectTemplate = typeof projectTemplates.$inferSelect;

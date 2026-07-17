@@ -50,6 +50,20 @@
       "when": 1784320042420,
       "tag": "0006_complex_senator_kelly",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784322679957,
+      "tag": "0007_lyrical_echo",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784323011199,
+      "tag": "0008_thin_frightful_four",
+      "breakpoints": true
     }
   ]
 }

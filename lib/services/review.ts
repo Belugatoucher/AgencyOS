@@ -147,6 +147,7 @@ export const commentInput = z.object({
   parentId: z.string().uuid().nullish(),
   kind: z.enum(["note", "change"]).default("note"),
   suggestion: z.object({ current: z.string().max(2000), proposed: z.string().max(2000) }).nullish(),
+  internal: z.boolean().default(false), // internal thread — only honored for internal actors
 });
 
 async function versionWithItem(versionId: string) {
@@ -191,6 +192,7 @@ export async function addComment(
     if (parent.parentId) return err("invalid", "Comments nest one level deep");
   }
 
+  const actorInternal = actor.type === "user" && isInternal({ role: actor.role } as Viewer);
   const [row] = await db
     .insert(reviewComments)
     .values({
@@ -206,6 +208,7 @@ export async function addComment(
       kind: input.kind,
       changeStatus: input.kind === "change" ? "open" : null,
       suggestion: input.suggestion ?? null,
+      internal: actorInternal && input.internal, // clients/guests can never write internal threads
       body: input.body,
     })
     .returning();
@@ -224,10 +227,42 @@ export async function addComment(
     {
       kind: "review_comment",
       body: { itemId: vi.item.id, title: vi.item.title, by: actor.type === "guest" ? actor.guestName : "team" },
+      // Portal/guest feedback pages the team channel within seconds (docs/11).
+      slackText: actorInternal
+        ? undefined
+        : `📣 Portal: new feedback on "${vi.item.title}"${input.kind === "change" ? " (change requested)" : ""}`,
     },
   );
 
   return ok(row!);
+}
+
+/**
+ * Authorize a read of a version's comments for this actor, and filter internal
+ * threads from clients/guests (docs/11). Internal users see everything.
+ */
+export async function listCommentsFor(actor: Actor, versionId: string): Promise<Result<ReviewComment[]>> {
+  const vi = await versionWithItem(versionId);
+  if (!vi) return err("not_found", "Version not found");
+  let internalActor = false;
+  if (actor.type === "user") {
+    internalActor = isInternal({ role: actor.role } as Viewer);
+    if (!internalActor) {
+      const membership = await db
+        .select()
+        .from(memberships)
+        .where(and(eq(memberships.userId, actor.id), eq(memberships.accountId, vi.item.accountId)));
+      if (membership.length === 0 || !vi.item.clientVisible) return err("not_found", "Version not found");
+    }
+  } else if (actor.itemId !== vi.item.id) {
+    return err("forbidden", "Share link does not match this item");
+  }
+  const rows = await db
+    .select()
+    .from(reviewComments)
+    .where(eq(reviewComments.versionId, versionId))
+    .orderBy(asc(reviewComments.createdAt));
+  return ok(internalActor ? rows : rows.filter((c) => !c.internal));
 }
 
 export async function listComments(versionId: string): Promise<ReviewComment[]> {

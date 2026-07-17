@@ -17,7 +17,20 @@ type Version = {
 };
 type Detail = { item: { id: string; title: string }; versions: Version[] };
 
-export function ReviewItemClient({ itemId, accountId, title }: { itemId: string; accountId: string; title: string }) {
+export function ReviewItemClient({
+  itemId,
+  accountId,
+  title,
+  internal = true,
+  backHref = "/review",
+}: {
+  itemId: string;
+  accountId: string;
+  title: string;
+  /** false = portal (client) skin: same player, team-only controls hidden (docs/11) */
+  internal?: boolean;
+  backHref?: string;
+}) {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -52,30 +65,32 @@ export function ReviewItemClient({ itemId, accountId, title }: { itemId: string;
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <Link href="/review" className="text-sm text-muted hover:text-foreground">
-            ← Review
+          <Link href={backHref} className="text-sm text-muted hover:text-foreground">
+            ← Back
           </Link>
           <h1 className="text-xl font-semibold">{title}</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            className="hidden"
-            data-testid="version-file"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) addVersion.mutate(f);
-              e.target.value = "";
-            }}
-          />
-          <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={addVersion.isPending}>
-            {addVersion.isPending ? "Uploading…" : "Upload version"}
-          </Button>
-          <Button onClick={() => share.mutate()} data-testid="share-btn">
-            Share (PIN 1234)
-          </Button>
-        </div>
+        {internal && (
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              className="hidden"
+              data-testid="version-file"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) addVersion.mutate(f);
+                e.target.value = "";
+              }}
+            />
+            <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={addVersion.isPending}>
+              {addVersion.isPending ? "Uploading…" : "Upload version"}
+            </Button>
+            <Button onClick={() => share.mutate()} data-testid="share-btn">
+              Share (PIN 1234)
+            </Button>
+          </div>
+        )}
       </div>
 
       {shareUrl && (
@@ -102,12 +117,12 @@ export function ReviewItemClient({ itemId, accountId, title }: { itemId: string;
         {versions.length === 0 && <p className="text-sm text-muted">Upload a version to start reviewing.</p>}
       </div>
 
-      {current && <VersionReview versionId={current} itemId={itemId} />}
+      {current && <VersionReview versionId={current} itemId={itemId} internal={internal} />}
     </div>
   );
 }
 
-function VersionReview({ versionId, itemId }: { versionId: string; itemId: string }) {
+function VersionReview({ versionId, itemId, internal }: { versionId: string; itemId: string; internal: boolean }) {
   const qc = useQueryClient();
   const { data: media } = useQuery({
     queryKey: ["review-media", versionId],
@@ -148,7 +163,7 @@ function VersionReview({ versionId, itemId }: { versionId: string; itemId: strin
       media={media ?? null}
       comments={comments ?? []}
       canComment
-      canModerate
+      canModerate={internal}
       onComment={(c) => addComment.mutate(c)}
       onResolve={(id, resolved) => patchComment.mutate({ id, body: { resolved } })}
       onChangeStatus={(id, changeStatus, declineReason) =>
@@ -170,17 +185,19 @@ function VersionReview({ versionId, itemId }: { versionId: string; itemId: strin
           >
             Approve
           </Button>
-          <Button
-            variant="outline"
-            onClick={() =>
-              approve.mutate(
-                { decision: "approved", approveWithExceptions: true },
-                { onSuccess: () => setApproveMsg("Approved with exceptions"), onError: (e) => setApproveMsg((e as Error).message) },
-              )
-            }
-          >
-            Approve w/ exceptions
-          </Button>
+          {internal && (
+            <Button
+              variant="outline"
+              onClick={() =>
+                approve.mutate(
+                  { decision: "approved", approveWithExceptions: true },
+                  { onSuccess: () => setApproveMsg("Approved with exceptions"), onError: (e) => setApproveMsg((e as Error).message) },
+                )
+              }
+            >
+              Approve w/ exceptions
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={() =>
@@ -192,9 +209,11 @@ function VersionReview({ versionId, itemId }: { versionId: string; itemId: strin
           >
             Request changes
           </Button>
-          <Button variant="outline" onClick={() => toTask.mutate(undefined, { onSuccess: () => setApproveMsg("Sent open changes to Tasks") })}>
-            Changes → Tasks
-          </Button>
+          {internal && (
+            <Button variant="outline" onClick={() => toTask.mutate(undefined, { onSuccess: () => setApproveMsg("Sent open changes to Tasks") })}>
+              Changes → Tasks
+            </Button>
+          )}
           {approveMsg && <span className="text-sm text-muted">{approveMsg}</span>}
         </div>
       }

@@ -152,6 +152,11 @@ export async function updatePost(
 export const approvalInput = z.object({
   decision: z.enum(["approved", "rejected"]),
   comment: z.string().max(2000).optional(),
+  // docs/11: rejections carry line-level suggestions, not bare "no"s
+  suggestions: z
+    .array(z.object({ current: z.string().min(1).max(2000), proposed: z.string().min(1).max(2000) }))
+    .max(20)
+    .default([]),
 });
 
 export async function decidePost(
@@ -171,11 +176,18 @@ export async function decidePost(
     if (m.length === 0) return err("not_found", "Post not found");
   }
 
+  // No vague feedback (docs/11): rejecting asks for {current, proposed} line
+  // suggestions on the copy instead of a bare rejection.
+  if (input.decision === "rejected" && input.suggestions.length === 0) {
+    return err("invalid", "Suggest at least one copy change so the team knows what to fix");
+  }
+
   await db.insert(postApprovals).values({
     postId: id,
     decision: input.decision,
     decidedBy: viewer.id,
     comment: input.comment ?? null,
+    suggestions: input.suggestions,
   });
   const [row] = await db
     .update(posts)
@@ -183,11 +195,16 @@ export async function decidePost(
     .where(eq(posts.id, id))
     .returning();
 
-  // Notify the post creator.
+  // Notify the post creator; portal (client) actions also page the team's
+  // Slack within seconds (docs/11).
+  const fromClient = !isInternal(viewer);
   if (post.createdBy && post.createdBy !== viewer.id) {
     void notify([post.createdBy], {
       kind: input.decision === "approved" ? "post_approved" : "post_rejected",
-      body: { postId: id, comment: input.comment },
+      body: { postId: id, comment: input.comment, suggestions: input.suggestions },
+      slackText: fromClient
+        ? `📣 Portal: a client ${input.decision === "approved" ? "approved" : `requested ${input.suggestions.length} change(s) on`} a post`
+        : undefined,
     });
   }
   return ok(row!);

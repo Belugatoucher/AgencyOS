@@ -113,6 +113,11 @@ export async function decideSuggestion(
   const g = guard(viewer, suggestion.accountId);
   if (!g.ok) return g as Result<never>;
   if (suggestion.status !== "pending") return err("conflict", "Already decided");
+  // Intake batches must go through the review/commit screen (docs/10) — a
+  // blind accept here would write the whole Brain unreviewed.
+  if (suggestion.field === "intake" && decision === "accepted") {
+    return err("invalid", "Intake submissions are committed from the onboarding review screen");
+  }
 
   if (decision === "accepted") {
     // Apply to the Brain. Week 8 scope: learnings + objections append.

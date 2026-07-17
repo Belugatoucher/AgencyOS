@@ -62,6 +62,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Accounts
             </Link>
             {internal && (
+              <Link href="/onboarding" className="text-muted hover:text-foreground">
+                Onboarding
+              </Link>
+            )}
+            {internal && (
               <Link href="/team" className="text-muted hover:text-foreground">
                 Team
               </Link>

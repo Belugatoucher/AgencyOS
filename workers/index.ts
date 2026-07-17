@@ -13,6 +13,7 @@ import { applyNotes, generateNotes } from "../lib/services/meeting-notes";
 import { enqueueDuePosts, publishPost } from "../lib/scheduler/publish";
 import { embedResearchDoc } from "../lib/services/research";
 import { rollupAllAccounts, unmatchedSpendDigest } from "../lib/services/metrics";
+import { sendClientDigests } from "../lib/services/portal-digest";
 
 // Worker skeleton: every queue gets a Worker whose processors dispatch by job
 // name and always record a job_runs row (docs/00 — failures surface in
@@ -99,6 +100,10 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     // Weekly unmatched-spend digest (docs/09)
     async "unmatched-spend-digest"() {
       return unmatchedSpendDigest();
+    },
+    // Weekly client portal digest (docs/11)
+    async "client-digest"() {
+      return sendClientDigests();
     },
   },
 };
@@ -189,6 +194,11 @@ async function registerSchedules() {
     "unmatched-spend-digest",
     {},
     { repeat: { pattern: "0 9 * * 1" }, jobId: "unmatched-spend-digest" }, // Mon 09:00
+  );
+  await cron.add(
+    "client-digest",
+    {},
+    { repeat: { pattern: "30 8 * * 5" }, jobId: "client-digest" }, // Fri 08:30 (docs/11 weekly)
   );
   console.log("[worker] cron schedules registered");
 }
