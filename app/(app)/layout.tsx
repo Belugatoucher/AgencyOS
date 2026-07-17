@@ -23,6 +23,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/" className="font-semibold">
               Agency OS
             </Link>
+            {internal && (
+              <Link href="/tasks" className="text-muted hover:text-foreground">
+                Tasks
+              </Link>
+            )}
             <Link href="/accounts" className="text-muted hover:text-foreground">
               Accounts
             </Link>

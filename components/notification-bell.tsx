@@ -15,6 +15,17 @@ function describe(kind: string, body: Record<string, unknown>): string {
       return `${body.name ?? "Someone"} was invited (${body.role ?? "user"})`;
     case "file_uploaded":
       return `File uploaded: ${body.filename ?? "unknown"}`;
+    case "task_assigned":
+      return `Assigned to you: ${body.title ?? "a task"}`;
+    case "task_comment":
+      return `New comment on ${body.taskTitle ?? "a task"}`;
+    case "daily_digest": {
+      const parts: string[] = [];
+      if (body.overdue) parts.push(`${body.overdue} overdue`);
+      if (body.today) parts.push(`${body.today} due today`);
+      if (body.inReview) parts.push(`${body.inReview} awaiting review`);
+      return `Daily digest: ${parts.join(", ") || "all clear"}`;
+    }
     default:
       return kind.replaceAll("_", " ");
   }

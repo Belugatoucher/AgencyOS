@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
 import { currentViewer } from "@/lib/auth/session";
 import { isInternal } from "@/lib/access";
+import { BoardClient } from "./board-client";
 
-// Members land on My Tasks (docs/04); clients have no task view → Accounts.
-export default async function Home() {
+export default async function BoardPage() {
   const viewer = await currentViewer();
   if (!viewer) redirect("/login");
-  redirect(isInternal(viewer) ? "/tasks" : "/accounts");
+  if (!isInternal(viewer)) redirect("/accounts");
+  return <BoardClient />;
 }

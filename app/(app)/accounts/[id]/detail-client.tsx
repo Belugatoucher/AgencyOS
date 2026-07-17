@@ -1,10 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useState } from "react";
 import { Badge, Button, Card, Input, Select } from "@/components/ui";
 import { api } from "@/lib/fetcher";
 import { UploadCard } from "./upload-card";
+import type { TaskRow } from "../../tasks/task-types";
 
 type Project = { id: string; name: string; status: string };
 type Member = { userId: string; role: string; name: string; email: string };
@@ -26,8 +28,47 @@ export function AccountDetailClient({
         <ProjectsCard accountId={account.id} internal={internal} />
         <MembersCard accountId={account.id} internal={internal} />
       </div>
+      {internal && <AccountTasksCard accountId={account.id} />}
       <UploadCard accountId={account.id} internal={internal} />
     </div>
+  );
+}
+
+function AccountTasksCard({ accountId }: { accountId: string }) {
+  // "Account view" (docs/04): everything open for this client — the status-call
+  // agenda. Read-only summary here; full editing lives in the Tasks module.
+  const { data: tasks } = useQuery({
+    queryKey: ["tasks", "account", accountId],
+    queryFn: () => api<TaskRow[]>(`/api/tasks?account=${accountId}`),
+  });
+  const open = (tasks ?? []).filter((t) => t.status !== "done");
+  return (
+    <Card
+      title="Open tasks"
+      actions={
+        <Link href={`/tasks/board?account=${accountId}`} className="text-xs text-accent hover:underline">
+          Open board →
+        </Link>
+      }
+    >
+      {open.length ? (
+        <ul className="flex flex-col gap-1">
+          {open.map((t) => (
+            <li key={t.id}>
+              <Link
+                href={`/tasks/${t.id}`}
+                className="flex items-center justify-between rounded-md p-2 text-sm hover:bg-background"
+              >
+                <span>{t.title}</span>
+                <Badge>{t.status.replaceAll("_", " ")}</Badge>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted">No open tasks.</p>
+      )}
+    </Card>
   );
 }
 
