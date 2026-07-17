@@ -6,6 +6,8 @@ import { bullConnection, getQueue, QUEUE_NAMES, type QueueName } from "../lib/qu
 import { runDueRecurringRules } from "../lib/services/recurring";
 import { sendDailyDigests } from "../lib/services/digest";
 import { applyLeadScore, scoreLead } from "../lib/services/lead-scoring";
+import { processAssetThumbnail, processReviewVersion } from "../lib/media/jobs";
+import { flagExpiringAssets } from "../lib/services/asset-rights";
 
 // Worker skeleton: every queue gets a Worker whose processors dispatch by job
 // name and always record a job_runs row (docs/00 — failures surface in
@@ -14,7 +16,18 @@ import { applyLeadScore, scoreLead } from "../lib/services/lead-scoring";
 type Processor = (job: Job) => Promise<unknown>;
 
 const processors: Record<QueueName, Record<string, Processor>> = {
-  media: {},
+  media: {
+    // Asset image/video thumbnail (docs/05)
+    async "asset-thumbnail"(job) {
+      const { assetId } = job.data as { assetId: string };
+      return processAssetThumbnail(assetId);
+    },
+    // Review version: poster + sprite + HLS ladder (docs/01)
+    async "review-transcode"(job) {
+      const { versionId } = job.data as { versionId: string };
+      return processReviewVersion(versionId);
+    },
+  },
   transcribe: {},
   ai: {
     // trivially verifiable job so the pipeline can be exercised end-to-end
@@ -40,6 +53,11 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     // Per-member daily digest (due today / overdue / awaiting review).
     async "daily-digest"() {
       return sendDailyDigests();
+    },
+    // Weekly rights-expiry sweep (docs/05): flag assets expiring in 30 days
+    // and any expired asset still marked approved.
+    async "asset-rights-sweep"() {
+      return flagExpiringAssets();
     },
   },
 };
@@ -110,6 +128,11 @@ async function registerSchedules() {
     "daily-digest",
     {},
     { repeat: { pattern: "0 8 * * *" }, jobId: "daily-digest" }, // 08:00 daily
+  );
+  await cron.add(
+    "asset-rights-sweep",
+    {},
+    { repeat: { pattern: "0 7 * * 1" }, jobId: "asset-rights-sweep" }, // Mon 07:00
   );
   console.log("[worker] cron schedules registered");
 }

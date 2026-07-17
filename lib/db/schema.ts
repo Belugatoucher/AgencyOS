@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -8,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -182,6 +184,124 @@ export const recurringRules = pgTable("recurring_rules", {
   active: boolean("active").notNull().default(true),
 });
 
+// ===== Assets (db/schema.sql, docs/05) =====
+
+export const assets = pgTable(
+  "assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id").notNull().references(() => accounts.id),
+    projectId: uuid("project_id").references(() => projects.id),
+    fileId: uuid("file_id").notNull().references(() => files.id),
+    type: text("type").notNull(), // logo|photo|video|raw|font|doc|export
+    status: text("status").notNull().default("draft"), // draft|in_review|approved|archived
+    assigneeId: uuid("assignee_id").references(() => users.id),
+    tags: text("tags").array().notNull().default(sql`'{}'`),
+    rightsNote: text("rights_note"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    supersededBy: uuid("superseded_by"),
+    thumbKey: text("thumb_key"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("assets_browse").on(t.accountId, t.type, t.status)],
+);
+
+export const collections = pgTable("collections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  name: text("name").notNull(),
+  isBrandKit: boolean("is_brand_kit").notNull().default(false),
+  isDropbox: boolean("is_dropbox").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const collectionAssets = pgTable(
+  "collection_assets",
+  {
+    collectionId: uuid("collection_id").notNull().references(() => collections.id),
+    assetId: uuid("asset_id").notNull().references(() => assets.id),
+  },
+  (t) => [primaryKey({ columns: [t.collectionId, t.assetId] })],
+);
+
+export const assetUsage = pgTable("asset_usage", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  assetId: uuid("asset_id").notNull().references(() => assets.id),
+  usedIn: text("used_in").notNull(), // post|review_version|campaign
+  usedInId: uuid("used_in_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ===== Review (db/schema.sql, docs/01) =====
+
+export const reviewItems = pgTable("review_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  projectId: uuid("project_id").references(() => projects.id),
+  title: text("title").notNull(),
+  clientVisible: boolean("client_visible").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
+export const reviewVersions = pgTable(
+  "review_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    itemId: uuid("item_id").notNull().references(() => reviewItems.id),
+    versionNo: integer("version_no").notNull(),
+    fileId: uuid("file_id").notNull().references(() => files.id),
+    hlsKey: text("hls_key"), // null until transcoded
+    thumbKey: text("thumb_key"),
+    spriteKey: text("sprite_key"),
+    status: text("status").notNull().default("processing"), // processing|ready|failed
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("review_versions_item_no").on(t.itemId, t.versionNo)],
+);
+
+export const reviewComments = pgTable("review_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  versionId: uuid("version_id").notNull().references(() => reviewVersions.id),
+  parentId: uuid("parent_id"),
+  authorId: uuid("author_id").references(() => users.id),
+  guestName: text("guest_name"),
+  shareLinkId: uuid("share_link_id"),
+  timestampMs: integer("timestamp_ms"),
+  timestampEndMs: integer("timestamp_end_ms"),
+  kind: text("kind").notNull().default("note"), // note|change
+  changeStatus: text("change_status"), // open|accepted|declined|done (kind=change)
+  suggestion: jsonb("suggestion"), // {current, proposed}
+  region: jsonb("region"), // {x,y,w,h}
+  drawing: jsonb("drawing"), // SVG path data
+  body: text("body").notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const reviewApprovals = pgTable("review_approvals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  versionId: uuid("version_id").notNull().references(() => reviewVersions.id),
+  decision: text("decision").notNull(), // approved|changes_requested
+  decidedBy: uuid("decided_by").references(() => users.id),
+  guestName: text("guest_name"),
+  comment: text("comment"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const shareLinks = pgTable("share_links", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  token: text("token").notNull().unique(),
+  kind: text("kind").notNull(), // review_item|collection
+  targetId: uuid("target_id").notNull(),
+  pin: text("pin"),
+  canComment: boolean("can_comment").notNull().default(true),
+  latestOnly: boolean("latest_only").notNull().default(false),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ===== Ops =====
 
 export const notifications = pgTable(
@@ -246,3 +366,11 @@ export type Pipeline = typeof pipelines.$inferSelect;
 export type Stage = typeof stages.$inferSelect;
 export type Lead = typeof leads.$inferSelect;
 export type LeadActivity = typeof leadActivities.$inferSelect;
+export type Asset = typeof assets.$inferSelect;
+export type Collection = typeof collections.$inferSelect;
+export type AssetUsage = typeof assetUsage.$inferSelect;
+export type ReviewItem = typeof reviewItems.$inferSelect;
+export type ReviewVersion = typeof reviewVersions.$inferSelect;
+export type ReviewComment = typeof reviewComments.$inferSelect;
+export type ReviewApproval = typeof reviewApprovals.$inferSelect;
+export type ShareLink = typeof shareLinks.$inferSelect;
