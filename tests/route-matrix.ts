@@ -4,7 +4,9 @@ import postgres from "postgres";
 import { eq } from "drizzle-orm";
 import {
   accounts,
+  leads,
   memberships,
+  pipelines,
   sessions,
   tasks,
   users,
@@ -31,6 +33,8 @@ type Fixture = {
   taskAVisible: string; // client_visible task in A
   taskAHidden: string; // hidden task in A
   taskB: string; // task in B
+  pipelineB: string; // pipeline in B
+  leadB: string; // lead in B
   cookies: Record<"admin" | "member" | "clientA" | "anon", string | null>;
 };
 
@@ -78,12 +82,24 @@ async function setup(): Promise<Fixture> {
     .values({ title: "B task", accountId: b!.id, clientVisible: true, status: "todo" })
     .returning();
 
+  // A lead in account B — leads are internal-only, so a client of A must never reach it.
+  const [pipelineB] = await db
+    .insert(pipelines)
+    .values({ accountId: b!.id, name: "Matrix B pipeline" })
+    .returning();
+  const [leadB] = await db
+    .insert(leads)
+    .values({ accountId: b!.id, pipelineUuid: pipelineB!.id, name: "B lead" })
+    .returning();
+
   return {
     accountA: a!.id,
     accountB: b!.id,
     taskAVisible: taskAVisible!.id,
     taskAHidden: taskAHidden!.id,
     taskB: taskB!.id,
+    pipelineB: pipelineB!.id,
+    leadB: leadB!.id,
     cookies: {
       admin: await mintSession(adminId),
       member: await mintSession(memberId),
@@ -193,6 +209,51 @@ const CASES: Case[] = [
     path: () => "/api/recurring-rules",
     body: () => ({ rrule: "FREQ=WEEKLY;BYDAY=MO", taskTemplate: { title: "weekly" } }),
     expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  // ===== Leads (internal-only; portal leads page deferred to doc 11) =====
+  {
+    name: "GET /api/leads (internal only)",
+    method: "GET",
+    path: () => "/api/leads",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET /api/leads/overview (internal only)",
+    method: "GET",
+    path: () => "/api/leads/overview",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET pipelines for account B (internal only)",
+    method: "GET",
+    path: (f) => `/api/pipelines?account=${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST pipeline (clients cannot create)",
+    method: "POST",
+    path: () => "/api/pipelines",
+    body: (f) => ({ name: "probe", accountId: f.accountA }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET lead in B (client of A refused)",
+    method: "GET",
+    path: (f) => `/api/leads/${f.leadB}`,
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "PATCH lead in B (client of A refused)",
+    method: "PATCH",
+    path: (f) => `/api/leads/${f.leadB}`,
+    body: () => ({ name: "hacked" }),
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST enqueue score on B lead (client refused)",
+    method: "POST",
+    path: (f) => `/api/leads/${f.leadB}/score`,
+    expect: { admin: 202, member: 202, clientA: 403, anon: ANON },
   },
 ];
 

@@ -26,9 +26,11 @@ describe("intakeSchema", () => {
     expect(r.success).toBe(true);
   });
 
-  it("rejects a tripped honeypot (website_url must be empty)", () => {
+  it("accepts a filled honeypot at the schema layer (dropped later, not a distinct error)", () => {
+    // The honeypot must parse OK so a bot can't tell it tripped a validation
+    // failure vs. a normal submission; ingestIntake drops it and returns 200.
     const r = intakeSchema.safeParse({ name: "Bot", website_url: "http://spam.example" });
-    expect(r.success).toBe(false);
+    expect(r.success).toBe(true);
   });
 
   it("coerces an empty email string to undefined", () => {

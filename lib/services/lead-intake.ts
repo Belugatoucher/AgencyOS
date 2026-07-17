@@ -14,8 +14,10 @@ export const intakeSchema = z.object({
   phone: z.string().trim().max(50).optional(),
   company: z.string().trim().max(200).optional(),
   message: z.string().trim().max(5000).optional(),
-  // honeypot — must be empty; bots fill it
-  website_url: z.string().max(0).optional(),
+  // honeypot — real users leave it empty; bots fill it. Accepted by the schema
+  // (so a filled value doesn't leak a distinct validation error) then dropped
+  // silently in ingestIntake, which still returns a 200.
+  website_url: z.string().max(2000).optional(),
 });
 
 /** Resolve a pipeline by its public intake token. Null = unknown/disabled. */
