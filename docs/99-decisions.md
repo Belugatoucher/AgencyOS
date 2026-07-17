@@ -14,6 +14,24 @@ Format:
 
 ---
 
+## 2026-07-17 — Notes transcription: configurable Python worker, on-box, degrades gracefully
+**Context:** docs/03 requires faster-whisper (large-v3 int8) + pyannote diarization on our own box; audio must never leave our infra (only text goes to Claude).
+**Decision:** `lib/transcribe/index.ts` shells out to `scripts/transcribe.py` (overridable via `TRANSCRIBE_CMD`/`TRANSCRIBE_SCRIPT`), which runs faster-whisper + pyannote and emits diarized segments JSON. The transcribe job pulls audio from R2, runs the script in a temp dir, writes the transcript, and enqueues the `ai` meeting-notes job. `Dockerfile.worker` apt-installs python3 + pip-installs the deps. Without `HF_TOKEN`, diarization degrades to a single `SPEAKER_00` so notes still generate.
+**Alternatives considered:** a Node whisper binding — the mature int8 CPU path is Python; a hosted transcription API — violates the on-box privacy rule.
+**Revisit if:** GPU transcription is needed at volume (docs/00 GPU upgrade path).
+
+## 2026-07-17 — This environment can't run whisper/Claude; Notes verified for wiring + logic
+**Context:** No faster-whisper/pyannote and no ANTHROPIC_API_KEY in this build env, and the R2 stub stores nothing.
+**Decision:** The Claude notes contract (`notesSchema`) is unit-tested (audit item 8 injection boundary). The pipeline was verified end-to-end for *wiring*: `transcribe-meeting` reaches the R2 fetch and `meeting-notes` reaches the Claude call, both failing loudly into `job_runs`. Feature behavior (full-text search, action-items→tasks, speaker rename) was verified against a seeded transcript. Real transcripts/notes need the worker image's Python deps + `ANTHROPIC_API_KEY` + real R2.
+**Alternatives considered:** mocking the whole pipeline in CI — the seeded-transcript approach exercises the real services and DB.
+**Revisit if:** CI gains the Python deps + a test API key — then an integration test can transcribe a short clip end to end.
+
+## 2026-07-17 — Transcript full-text search computed at query time (stored tsvector deferred)
+**Context:** `db/schema.sql` defines a stored `tsvector` generated column + GIN index on transcripts; drizzle-kit doesn't model generated tsvector columns cleanly.
+**Decision:** Compute `to_tsvector('english', segments::text)` at query time with `ts_headline` snippets. Correct and fine at current volume.
+**Alternatives considered:** a custom Drizzle type + hand-written migration for the stored column — more moving parts than the data warrants today.
+**Revisit if:** transcript volume makes on-the-fly tsvector slow — add the stored column + GIN index as a follow-up migration (the SQL file already specifies it).
+
 ## 2026-07-17 — Shared media rail: ffmpeg wrappers + FFMPEG_PATH, worker installs ffmpeg
 **Context:** Weeks 4 (asset thumbnails) and 5 (HLS transcode + sprite sheets) both need ffmpeg. The app image must not carry it (rule 5: the app never touches bytes).
 **Decision:** `lib/media/ffmpeg.ts` wraps a full ffmpeg (image/video thumbnail, sprite sheet, HLS ladder) with a hard timeout; `FFMPEG_PATH`/`FFPROBE_PATH` env overrides the binary. `Dockerfile.worker` apt-installs ffmpeg; the app image does not. `lib/media/jobs.ts` runs only in the worker: pull source from R2 → process in a temp dir → push derived objects → update the DB row. Media jobs are `media`-queue jobs with retries and `job_runs`.

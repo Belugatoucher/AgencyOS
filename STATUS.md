@@ -1,46 +1,39 @@
-# STATUS — through Week 5: Assets + Review
+# STATUS — through Week 6: Notes
 
 _Last session: 2026-07-17. Read this first next session (HANDOFF.md rule)._
 
-## Week 4 — Assets (docs/05) — COMPLETE
-- **Schema** — assets/collections/collection_assets/asset_usage in Drizzle (migration 0003).
-- **Grid browser** — account picker + type/status/search filters, upload→register (shared `lib/upload-client`), inline status, type/mime placeholder thumbnails (real thumbs render from `thumb_key` when the media worker runs).
-- **Dedup** — checksum match in the same account returns `duplicateOf` and the UI warns.
-- **Assignment** — assigning a draft asset spawns an auto-task (`source=asset`) in the assignee's My Tasks.
-- **Collections + Brand Kit + drop-box + share links** — collections with `is_brand_kit`/`is_dropbox`; share links reuse the signed-link service (≥128-bit token, PIN, expiry).
-- **Rights expiry** — weekly `cron` job flags assets expiring in 30 days and expired-but-still-approved, notifies internal + Slack.
-- **Usage backlinks** — `asset_usage` rows + `GET /api/assets/:id/usage`.
+## Week 6 — Notes (docs/03) — COMPLETE
+Private AI note taker: record/upload a meeting, transcribe on-box, turn it into structured notes + action items + CRM context.
 
-## Week 5 — Review (docs/01) — COMPLETE (MVP; version-compare + drawing capture post-MVP)
-- **Items/versions** — items with `client_visible` scoping; a new upload = next version, enqueues a `review-transcode` media job.
-- **ffmpeg worker** — poster thumbnail + scrub sprite sheet + HLS ladder (720p/1080p) for video, poster for images; sets `thumb_key`/`sprite_key`/`hls_key` and marks the version ready|failed.
-- **Comments** — frame-anchored (`timestamp_ms` from `video.currentTime`), region for stills, one-level threading, resolve, click-to-seek. Change punch-list: `open/accepted/declined/done`, decline requires a reason (posted as a reply). "Changes → Tasks" spawns one task with a checklist item per open change.
-- **Approvals** — approve / request-changes; request-changes needs ≥1 change comment; can't approve with open changes unless "approve with exceptions" (logs the count). Fires notification + Slack.
-- **Share links + public page** — `POST /api/review/items/:id/share` mints a 14-day link (optional PIN); public `/r/:token` page with PIN gate (5/15min rate limit + lockout + owner notification), guest-name-once, comment + approve. Media served via ≤15-min signed R2 URLs minted per request; revoke expires the link so playback dies (audit item 1).
+- **Capture** — upload audio/video onto a meeting; `/record` in-person page (MediaRecorder, all-party-consent notice, 30s chunk backup to R2, full recording finalized on stop).
+- **Pipeline** (audio never leaves our infra; only text goes to Claude): attach audio → `transcribe` job runs `scripts/transcribe.py` (faster-whisper large-v3 int8 + pyannote diarization) → writes diarized segments → `ai` `meeting-notes` job runs Claude with `prompts/meeting-notes.md` verbatim → Zod-gated JSON with one retry → owner fuzzy-match + due-date clamp → attendee→lead auto-link → write `meeting_notes`, flip status ready, notify.
+- **Meeting page** — synced audio player (click a transcript line → seek), speaker rename, summary + decisions, action-items panel with checkbox → bulk-create Tasks (`source=meeting`), status polling while processing.
+- **Search** — Postgres full-text across all transcripts with `ts_headline` snippets.
+- **Privacy** — `client_visible` defaults false; internal-only routes; retention setting per meeting (keep/90d/transcript_only); recording-consent reminder on `/record`.
 
-Shared: `lib/media` (ffmpeg wrappers + jobs), `lib/upload-client` (presigned→R2→register), `components/review-player` (used by internal item page + public page).
+Routes: `GET/POST /api/meetings`, `GET /api/meetings/:id`, `POST/GET /api/meetings/:id/audio`, `POST /api/meetings/:id/chunks`, `PATCH …/speakers`, `POST …/reprocess`, `POST …/tasks`, `GET /api/meetings/search`. Nav: Notes tab.
 
 ## Verified this session (real Postgres + Redis)
-- Unit: **36 pass** (access 12, rrule 9, lead-scoring 5, lead-intake 7, ffmpeg 3). E2e: **6 pass** (week-1, magic-link, tasks, leads, assets, review-with-public-share). Route-matrix: **124/124** (+16 asset/review/share cases: client of A gets 404 cross-account; public share is session-agnostic — 200 valid token, 404 bad token).
-- Share PIN gate driven by curl: no-pin/wrong-pin → `pin_required`, correct → `ok`; 6 wrong attempts → `locked_out` (429). Guest change-comment via token → 201.
-- **Media rail proven end-to-end for wiring:** both `asset-thumbnail` and `review-transcode` jobs execute, pull from the R2 stub, and reach the real ffmpeg invocation, failing loudly into `job_runs`. Real thumbnails/HLS need the full ffmpeg the worker Docker image installs (this env's bundled ffmpeg is encoder-less) + real R2. See decisions log.
+- Unit: **40 pass** (access 12, rrule 9, lead-scoring 5, lead-intake 7, ffmpeg 3, meeting-notes 4). E2e: **7 pass** (week-1, magic-link, tasks, leads, assets, review, notes). Route-matrix: **144/144** (+20 meeting cases: Notes internal-only — client 403 on list/create/search, 404 cross-account meeting; anon 401).
+- Against a seeded transcript: full-text search hit on "budget", action-items→tasks bridge (creates a task, marks `task_id`, idempotent — index 1 stays unlinked), speaker rename.
+- **Pipeline proven end-to-end for wiring:** `transcribe-meeting` reaches the R2 audio fetch and `meeting-notes` reaches the Claude call, both failing loudly into `job_runs`. Real transcripts/notes need the worker image's Python deps (whisper/pyannote) + `ANTHROPIC_API_KEY` + real R2. See decisions log.
 
 ## How to run (unchanged, plus)
 ```bash
-pnpm test          # 36 unit (add FFMPEG_PATH=/path/to/full/ffmpeg to exercise encode tests)
-pnpm test:matrix   # 124-check route matrix (needs running app + DB)
-pnpm build && pnpm test:e2e   # 6 playwright specs (CHROMIUM_PATH=/opt/pw-browsers/chromium here)
-pnpm worker        # media (asset-thumbnail, review-transcode), ai (score-lead), cron (recurring/digest/rights-sweep)
+pnpm test          # 40 unit
+pnpm test:matrix   # 144-check route matrix (needs running app + DB)
+pnpm build && pnpm test:e2e   # 7 playwright specs
+pnpm worker        # media, transcribe (whisper), ai (score-lead, meeting-notes), cron
 ```
-Media processing needs a full ffmpeg (the worker image apt-installs it) + real R2. Locally, point `R2_ENDPOINT` at MinIO to round-trip real media.
+Notes transcription needs the worker Docker image (python3 + faster-whisper + pyannote; `HF_TOKEN` for diarization) + `ANTHROPIC_API_KEY` + real R2. Locally, point `R2_ENDPOINT` at MinIO and set `TRANSCRIBE_CMD` if whisper lives elsewhere.
 
-## Next (Week 6 — Notes, docs/03)
-- Upload + in-person recorder, **whisper worker** (the `transcribe` queue rail exists; add faster-whisper to the worker image like ffmpeg), diarization, Claude meeting notes, action-items→Tasks bridge (the `tasks.source=meeting` column + the changes→task pattern from Review are the template), auto-linking to leads.
+## Next (Weeks 8-9 — Intelligence + Metrics, docs/08 + docs/09)
+Week 7 (Scheduler) is the roadmap's next module, but Intelligence/Metrics may be prioritized — check the roadmap. Intelligence needs pgvector + an embedding worker (new rail), the hooks DB, research pipeline, per-client Brain (RAG with read-only tools — audit item 8), and Ask-the-Brain chat with citations. Metrics: CSV importer + rollups + is_winning compute (docs/09). The `ai` queue, RAG-scope walls, and the Zod-gated extraction pattern from Notes/Leads are the templates; `db/002-intelligence.sql` defines the tables.
 
 ## Carrying forward / needs Ryan
-- Media verified for wiring only in this env (no full ffmpeg / no real R2). First real deploy should transcode a test clip and confirm HLS plays.
-- R2 bucket needs CORS (PUT from APP_URL, expose ETag) for browser uploads; the media worker needs R2 read+write creds.
-- Review drawing-overlay capture and version-compare are post-MVP (schema columns ready).
-- Portal (doc 11, wk10) will expose client-facing Review/Assets views; `client_visible`/`client_hidden` honored server-side already.
-- Route-matrix still hand-extended per new route (automation still TODO). Now 124 checks.
-- Standing deploy needs: SMTP_URL, R2 creds + CORS, AUTH_SECRET, APP_ENCRYPTION_KEY, ANTHROPIC_API_KEY.
+- **AI-dependent features need `ANTHROPIC_API_KEY`**: lead scoring, meeting notes. Transcription needs whisper/pyannote (worker image) + `HF_TOKEN`.
+- Media + transcription verified for wiring only in this env (no full ffmpeg/whisper, no real R2). First deploy should transcribe a real clip end to end.
+- Transcript search is computed at query time; add the stored tsvector column + GIN index at scale (SQL file already specifies it).
+- Portal (doc 11, wk10) exposes client-facing views; `client_visible` honored server-side across Review/Assets/Notes.
+- Route-matrix hand-extended per new route (automation still TODO). Now 144 checks.
+- Standing deploy needs: SMTP_URL, R2 creds + CORS, AUTH_SECRET, APP_ENCRYPTION_KEY, ANTHROPIC_API_KEY, HF_TOKEN.

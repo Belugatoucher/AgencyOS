@@ -61,9 +61,9 @@ GET    /api/meetings/search?q=
 
 ## Build checklist
 
-- [ ] Upload + chunked in-person recorder page
-- [ ] faster-whisper worker + pyannote diarization
-- [ ] Claude notes job + auto-linking by attendee
-- [ ] Meeting page with synced player + editable notes
-- [ ] Action items → Tasks bridge
-- [ ] Full-text search
+- [x] Upload + chunked in-person recorder page
+- [x] faster-whisper worker + pyannote diarization — `scripts/transcribe.py` (worker Docker image installs deps); degrades to a single speaker without HF_TOKEN
+- [x] Claude notes job + auto-linking by attendee
+- [x] Meeting page with synced player + editable notes — synced transcript (click→seek), speaker rename, notes; free-text note editing is inline via reprocess
+- [x] Action items → Tasks bridge
+- [x] Full-text search
