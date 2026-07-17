@@ -20,6 +20,10 @@ tmp/
 postgres-data/
 redis-data/
 *.dump
+docker-compose.override.yml
+
+# dev mailbox (magic links written here when SMTP_URL is unset)
+.dev-mail/
 
 # tooling
 .vscode/

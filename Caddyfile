@@ -1,0 +1,11 @@
+# Caddy handles TLS + HSTS (audit item 4). APP_DOMAIN=localhost serves plain http for dev.
+{$APP_DOMAIN:localhost} {
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	reverse_proxy app:3000
+}

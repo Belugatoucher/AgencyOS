@@ -1,0 +1,11 @@
+# Local dev override — copy to docker-compose.override.yml (gitignored).
+# Publishes Postgres/Redis on loopback so `pnpm dev` on the host can reach them.
+# NEVER use on a public VPS: production keeps these ports unpublished (audit item 4).
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
