@@ -14,6 +14,36 @@ Format:
 
 ---
 
+## 2026-07-17 — Intake batch commits through the review screen, not decideSuggestion
+**Context:** docs/10 wants submissions to land as a brain_suggestions batch AND wants member review-with-edits before anything writes to the Brain. Applying a whole intake through the one-field decideSuggestion path would bypass the edit step.
+**Decision:** Submit inserts ONE pending suggestion (field `intake`, proposed = the merged sections) as the audit-trail/pending marker; decideSuggestion refuses to blind-accept that field and points at the onboarding review screen; the commit endpoint takes the member-edited payload, writes Brain v1 through the versioned updater, marks the suggestion accepted, seeds competitor research stubs (status `stub`, kept out of retrieval), turns access gaps into AM tasks, and optionally spawns the kickoff template (tasks + slots + meeting).
+**Alternatives considered:** per-field suggestion rows — 9 rows per intake with no way to edit before accept; direct commit without a suggestion row — loses the pending-review trail.
+**Revisit if:** annual-refresh intakes land (docs/10 wants a diff against the current Brain, not an overwrite).
+
+## 2026-07-17 — Review comment reads: per-actor authorization + `internal` thread flag
+**Context:** Building the portal exposed that GET /api/review/versions/:id/comments authorized only "any signed-in user" — a cross-account read hole — and docs/11 requires internal threads to be invisible to clients.
+**Decision:** Added `review_comments.internal` (migration 0008); only internal actors can set it, and listCommentsFor()/the public share payload filter it for clients/guests. The GET route now authorizes per actor (client: membership + client_visible, guest: token↔item match) and returns 404 cross-account — covered by a new route-matrix case.
+**Alternatives considered:** inferring "internal" from author role — wrong, internal users also write client-facing comments.
+**Revisit if:** threads need per-comment visibility levels beyond internal/client.
+
+## 2026-07-17 — Post rejections require {current, proposed} suggestions
+**Context:** docs/11: rejecting a scheduled post asks for line-level suggestions "instead of a bare rejection comment."
+**Decision:** `post_approvals.suggestions` jsonb; decidePost returns 400 on a rejection with zero suggestions (any role — the no-vague-feedback gate matches Review's). Client decisions also ping the team Slack. The composer's per-suggestion accept/decline is a UI pass on top of the stored shape — deferred.
+**Alternatives considered:** client-only enforcement — the team deserves the same discipline; free-text-only comment — exactly the vagueness the doc bans.
+**Revisit if:** the composer suggestion-merge UI lands (then suggestions may need ids/status).
+
+## 2026-07-17 — Weekly client digest: Fri 08:30, quiet weeks skipped
+**Context:** docs/11 wants a weekly digest per client contact, settable per account (weekly/off); no day specified.
+**Decision:** `accounts.portal_digest` (default weekly); cron Fri 08:30 so "what shipped this week" reads naturally before the weekend; digests with nothing to say are skipped (zero-count digests train people to ignore email). Email via SMTP_URL with the established dev-mailbox fallback; recipients also get an in-app notification. "Needs your eyes" is computed with a synthetic client viewer through getPortalHome, so digest contents can never exceed what the portal itself shows.
+**Alternatives considered:** Monday send — reads as a nag list; always-send — noise.
+**Revisit if:** per-contact frequency preferences arrive.
+
+## 2026-07-17 — Backup + restore-drill scripts; drill executed in dev
+**Context:** Roadmap wk10: "Backups verified by restoring one." docs/98: encrypted dumps, write-only R2 creds, monthly restore test.
+**Decision:** `scripts/backup.sh` (pg_dump custom+gzip, age-encrypted when BACKUP_AGE_RECIPIENT set, uploaded via aws-cli with the R2_BACKUP_* write-only creds when present) and `scripts/restore-check.sh` (restore newest dump into a scratch DB, assert >20 tables + users present, drop). The drill ran against the real dev DB: 44 tables and 8 users restored cleanly.
+**Alternatives considered:** managed Postgres backups — the stack is one VPS by design (docs/00).
+**Revisit if:** data outgrows single-file dumps (switch to wal-g) or compose gains a backup sidecar.
+
 ## 2026-07-17 — Pluggable embedder: hash-mode default, bge-small behind EMBED_MODE=local
 **Context:** docs/08 names local bge-small (384-dim) for embeddings; dev/CI containers can't fetch the model, and retrieval ordering still needs real verification against pgvector.
 **Decision:** `lib/embeddings` is pluggable via `EMBED_MODE`: default `hash` produces deterministic normalized FNV-1a bag-of-words vectors (cosine similarity ≈ lexical overlap, so ordering is genuinely testable end-to-end); `local` shells to `scripts/embed.py` (bge-small-en-v1.5, installed in the worker image). Both are 384-dim, so switching modes needs a re-embed, not a schema change.

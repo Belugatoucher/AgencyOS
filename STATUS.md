@@ -1,42 +1,40 @@
-# STATUS — through Weeks 8-9: Intelligence + Metrics
+# STATUS — through Week 10: Onboarding + Client Portal + polish
 
 _Last session: 2026-07-17. Read this first next session (HANDOFF.md rule)._
 
-## Weeks 8-9 — Intelligence (docs/08) + Metrics (docs/09) — COMPLETE (MVP scope; see checklists)
-The RAG rail is live: pgvector + embeddings + retrieval, the per-client Brain, and the metrics pipeline that feeds winning-creative computation.
+## Week 10 — Onboarding (docs/10) + Portal (docs/11) + roadmap polish — COMPLETE (MVP scope; see checklists)
 
-- **Embeddings** — `lib/embeddings`: pluggable via `EMBED_MODE` — `hash` default (deterministic 384-dim, cosine ≈ lexical overlap, so retrieval ordering is real and testable in dev/CI); `local` runs bge-small via `scripts/embed.py` (installed in the worker image). Migration 0006 creates the `vector` extension + hnsw cosine indexes; compose now uses `pgvector/pgvector:pg16`.
-- **Hooks** — global + per-account library; create embeds inline, CSV import (`text,format,platform,niche_tags,source_url`), search = filters + semantic ranking via pgvector `<=>`. PWA share-target lands with the PWA shell (doc 13).
-- **Research** — paste → doc row → `embed-research` ai job chunks (1200/150 overlap) + embeds → `research_chunks`; status processing→ready|failed. Semantic search over chunks scoped to this-account + global.
-- **Creatives** — performance log; a written learning auto-proposes a Brain suggestion; nightly rollup writes period totals + rates into `creatives.metrics` and recomputes `is_winning` (top quartile = best ceil(n/4) on the primary KPI, min-spend floor $100 default).
-- **Client Brain** — editor (offer/ICP/positioning/voice/objections/proof points/compliance no-gos/goals); every write snapshots to `brain_versions` and bumps `version`. Suggestion queue: creatives' learnings + meeting decisions (applyNotes bridge) propose; humans accept/reject; the Brain never self-edits.
-- **Ask the Brain** — tool loop (audit item 8): four read-only Zod-gated tools (search_hooks/search_research/search_creatives/get_brain) under the viewer's access scope; retrieval scope is structurally this-account + global (cross-client rows never fetched); every thread stores messages + retrieval IDs in `ai_threads`. `/brief` reuses the loop. Non-streaming v1; prompt from `prompts/client-brain.md` verbatim; `BRAIN_CHAT_MODEL` (default current Sonnet).
-- **Metrics** — `db/007-metrics.sql` (new; pack had no SQL for docs/09): `metric_sources` (saved column mappings) + `metric_rows` with `unique(source_id, external_id, date)` → idempotent CSV re-imports. Ad↔creative matching by id-slug in ad name (full uuid or ≥8-hex prefix), manual link route for stragglers, `unmatched-spend-digest` cron (Mon 09:00) pages unmatched spend. `metrics-rollup` cron (02:30 nightly).
+- **Onboarding** — internal console (`/onboarding`): mint 30-day CSPRNG intake links per account. Public form (`/onboard/[token]`, no login, audit-item-6 hardened: per-IP rate limit, body cap, strict Zod, identical 404s) with partial saves. Submit → ONE pending `brain_suggestions` row (field `intake`; decideSuggestion refuses blind accept). Review & commit screen: member edits every answer, commit writes **Brain v1** through the versioned updater, competitors → `research_docs` stubs (status `stub`, out of retrieval), access gaps → AM tasks, optional **project template** spawns kickoff tasks (+offset_days), content slots, and a kickoff meeting.
+- **Portal** — `/portal/[accountId]` client-skinned shell (Home/Reviews/Content/Files/Meetings); clients land there on login (single membership) — a filtered view over existing role checks, no new permission logic. Home = action-needed stack (reviews awaiting, posts awaiting, visible tasks) with the "You're all caught up" empty state. Reviews reuse `ReviewItemClient` with team controls hidden. Content: read-only list with Approve / Request-changes; **rejections require ≥1 {current, proposed} line suggestion** (stored on `post_approvals.suggestions`). Files: shared collections. Meetings: `client_visible` recaps, summary only. Client actions ping the team Slack.
+- **Review hardening (found during portal work)** — the comments GET authorized any signed-in user (cross-account leak): now per-actor authorization (404 cross-account, matrix-covered). New `review_comments.internal` flag: internal threads are role-filtered from clients/guests everywhere (API + public share payload); only internal actors can write internal comments.
+- **Weekly client digest** — cron Fri 08:30, per-account `portal_digest` weekly|off, quiet weeks skipped; "needs your eyes" computed via a synthetic client viewer through `getPortalHome`, so the digest can never say more than the portal shows. SMTP with dev-mailbox fallback + in-app notification.
+- **Polish** — search-everywhere bar in the header (`/api/search`: accounts/tasks/leads/assets/meetings+transcript-FTS/posts/reviews, internal only). `/admin/health` already covers new queues generically. `scripts/backup.sh` (pg_dump+gzip, optional age encryption, optional write-only-R2 upload) + `scripts/restore-check.sh`.
 
-Routes: `GET/POST /api/hooks` (+`/import`), `GET/POST /api/research` (+`/search`), `GET/POST /api/creatives`, `GET/PATCH /api/brain/:accountId` (+`/suggestions`, `/chat`, `/brief`), `POST /api/brain/suggestions/:id`, `GET/POST /api/metrics/sources` (+`/:id/import`), `GET /api/metrics/unmatched`, `POST /api/metrics/rows/:id/link`. Nav: Intelligence tab (internal only — the whole layer is invisible to clients).
+Schema (migrations 0007-0008, SQL files updated in kind): `intake_forms`, `project_templates` (from db/003), `post_approvals.suggestions`, `accounts.portal_digest`, `review_comments.internal`.
 
-## Verified this session (real Postgres + pgvector + Redis)
-- Unit: **60 pass** (+14: embedder determinism/ranking/chunking, slug matching, aggregation, quartile winners). E2e: **9 pass** (+intelligence: hooks add/semantic search, research paste, creative log → Brain suggestion → accept → version bump). Route-matrix: **228/228** (+64: all Intelligence/Metrics routes — internal-only 403 for clients, anon 401, suggestion decide-once 409).
-- `scripts/verify-intelligence.ts` (23 checks, all pass, run against the live worker): research doc embedded by the real `embed-research` job → chunks with 384-dim embeddings → **pgvector retrieval ranks the right chunk first**; hooks semantic ordering; creative learning → suggestion → accept applies learning + versions the Brain; meeting-decision bridge; CSV import matched the slug-named ad, re-import stayed idempotent (3 rows, no dupes), rollup computed spend 200.50 / ROAS 3.09 and flagged the winner.
-- Brain chat wiring fails loudly without `ANTHROPIC_API_KEY` (same posture as scoring/notes); auth ordering proven by matrix (clients 403 before any model call).
-- Gotcha (now in decisions log): e2e must run against `pnpm build && pnpm start` — the audit CSP (no `unsafe-eval`) kills Next dev-mode hydration.
+Routes: `GET/POST /api/onboarding/intakes` (+`/[id]/commit`), `GET/POST /api/onboarding/templates`, `GET/POST /api/onboarding/form/[token]` (public), `GET /api/portal/[accountId]` (+`/meetings`), `GET /api/search`. Nav: Onboarding tab; portal is its own route group.
+
+## Verified this session (real Postgres + Redis, prod build)
+- Unit: **60 pass**. E2e: **11 pass** (+portal spec: admin intake link → public form fill/partial-save/submit → review & commit; then a REAL client session minted in the DB: lands in portal, sees action stack, blocked from /tasks, approves a post). Route-matrix: **276/276** (+48: onboarding internal + public-token cases, portal cross-account 404s / own-account 200s, comment-read leak regression, bare-rejection 400, search internal-only).
+- Commit side effects checked in the DB: Brain v1 offer written (version bumped), competitor stub `Acme Clinics Co(stub)`, gap task "Get access: Meta ad account".
+- `sendClientDigests()` executed live: 4 accounts, real digest bodies in dev-mail.
+- **Restore drill actually ran**: backup taken, restored into a scratch DB — 44 tables, 8 users — then dropped.
 
 ## How to run (unchanged, plus)
 ```bash
 pnpm test          # 60 unit
-pnpm test:matrix   # 228-check route matrix (needs running app + DB)
-pnpm build && pnpm test:e2e   # 9 playwright specs
-pnpm worker        # + ai: embed-research · cron: metrics-rollup, unmatched-spend-digest
-pnpm tsx scripts/verify-intelligence.ts   # 23-check live pipeline verification
+pnpm test:matrix   # 276-check route matrix (needs running app + DB)
+pnpm build && pnpm test:e2e   # 11 playwright specs (prod build — dev-mode CSP note in decisions)
+pnpm worker        # + cron: client-digest (Fri 08:30)
+./scripts/backup.sh && ./scripts/restore-check.sh   # backup + monthly drill
 ```
-Postgres needs pgvector (compose image is `pgvector/pgvector:pg16`; bare metal: `postgresql-16-pgvector`). `EMBED_MODE=local` in prod for real embeddings (worker image has sentence-transformers).
 
-## Next (Week 10 — Client Portal, docs/11)
-The portal exposes client-facing surfaces over the rails that already enforce `client_visible` + membership scoping server-side: review approvals, post approvals, visible tasks, shared assets, and (per `org_settings`/`portal_leads`) lead summaries. The route-matrix already proves the isolation the portal relies on; portal work is mostly pages + navigation for the `client` role, which currently gets redirected to /accounts.
+## Next (Weeks 11-12 — Academy, docs/16)
+SOP library + staleness engine, courses/lessons reusing the media + whisper pipelines, role-based assignments + completion matrix, quizzes, Notebook chat on the kb scope. Tables in db/004-academy.sql. Rides existing rails (files/media workers, RAG layer from wk8, notifications) — per the scope-creep rule this should be cheap.
 
 ## Carrying forward / needs Ryan
-- **AI features need `ANTHROPIC_API_KEY`**: lead scoring, meeting notes, content drafting, **Ask the Brain**. Transcription needs whisper/pyannote + `HF_TOKEN`. Publishing needs GHL only when leaving manual mode.
-- Media + transcription verified for wiring only in this env (no full ffmpeg/whisper, no real R2). Embeddings/retrieval ARE verified for real (hash mode vs live pgvector); first deploy with `EMBED_MODE=local` should re-embed and spot-check retrieval quality.
-- Deferred: PWA share-target (doc 13), Brain-chat streaming + send-to-composer, research file upload/extraction, metrics column-picker UI, Meta API adapter (v1.5), per-account KPI/min-spend settings.
-- Route-matrix hand-extended per new route (automation still TODO). Now 228 checks.
-- Standing deploy needs: SMTP_URL, R2 creds + CORS, AUTH_SECRET, APP_ENCRYPTION_KEY, ANTHROPIC_API_KEY, HF_TOKEN; GHL_* when leaving manual publish.
+- **AI features need `ANTHROPIC_API_KEY`**: lead scoring, meeting notes, content drafting, Ask the Brain. Transcription needs whisper/pyannote + `HF_TOKEN`. `EMBED_MODE=local` in prod.
+- Deferred this week: brand-asset drop-box on the intake (needs public presign), portal theme proposal from logo (doc 14), portal Documents page (doc 17 module), portal Leads page (doc 02 pass; `portal_leads` setting exists), "what changed in v2" review diffs, composer per-suggestion accept/decline UI, custom portal domains.
+- Media + transcription remain wiring-verified only in this env; embeddings/retrieval verified for real.
+- Route-matrix hand-extended per new route (automation still TODO). Now 276 checks.
+- Standing deploy needs: SMTP_URL, R2 creds + CORS, AUTH_SECRET, APP_ENCRYPTION_KEY, ANTHROPIC_API_KEY, HF_TOKEN; GHL_* when leaving manual publish; BACKUP_AGE_RECIPIENT + R2_BACKUP_* for encrypted off-site backups.

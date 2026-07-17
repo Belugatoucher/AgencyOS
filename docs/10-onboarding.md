@@ -29,7 +29,7 @@ project_templates — name, task_set jsonb, default_slots jsonb
 
 ## Build checklist
 
-- [ ] Intake form builder-lite (fixed sections, per-account toggle)
-- [ ] Public form page + partial save + drop-box
-- [ ] Review/commit screen → Brain v1 + assets + tasks
-- [ ] Project templates + kickoff spawn
+- [x] Intake form builder-lite (fixed sections, per-account toggle) — fixed sections 1:1 with Brain fields; per-account section toggles follow when a client needs them
+- [x] Public form page + partial save + drop-box — 30-day CSPRNG token, partial saves merge, audit-item-6 hardening (rate limit, caps, identical 404s); brand-asset drop-box lands with the public-presign uploads pass
+- [x] Review/commit screen → Brain v1 + assets + tasks — submission is a pending suggestion (blind accept refused); commit writes Brain v1 via the versioned updater, competitors → research stubs, access gaps → AM tasks
+- [x] Project templates + kickoff spawn — task_set (offset_days, client_visible) + default_slots + kickoff meeting record; annual-refresh diff mode deferred

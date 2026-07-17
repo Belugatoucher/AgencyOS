@@ -26,7 +26,9 @@ One login (or one magic link) per client showing everything they owe you and eve
 
 ## Build checklist
 
-- [ ] Portal layout + home action stack
-- [ ] Review + approval reuse with client skin
-- [ ] Content calendar read-only view
-- [ ] Weekly digest job
+- [x] Portal layout + home action stack — /portal/:accountId shell (Home/Reviews/Content/Files/Meetings); clients land there on login; "You're all caught up" empty state
+- [x] Review + approval reuse with client skin — same ReviewItemClient, team controls hidden; internal threads role-filtered (new `internal` flag); portal actions page Slack; "what changed in v2" diffs deferred
+- [x] Content calendar read-only view — list view of in_approval/approved/scheduled/published with permalinks; approve or reject-with-{current,proposed}-suggestions (bare rejections refused); composer accept/decline-per-suggestion UI deferred
+- [x] Weekly digest job — Fri 08:30 cron, per-account weekly|off, quiet weeks skipped, SMTP with dev-mailbox fallback
+
+Deferred pages: Documents (doc 17 presales module not built yet), Leads summary/kanban (doc 02 portal pass; `portal_leads` setting already in schema), custom domains (doc 14).

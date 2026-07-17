@@ -9,6 +9,7 @@ import {
   brainSuggestions,
   creatives,
   files,
+  intakeForms,
   leads,
   meetings,
   memberships,
@@ -17,6 +18,7 @@ import {
   pipelines,
   posts,
   reviewItems,
+  reviewVersions,
   sessions,
   shareLinks,
   tasks,
@@ -55,6 +57,9 @@ type Fixture = {
   suggestionB: string; // pending brain suggestion in B
   metricSourceB: string; // csv metric source in B
   metricRowB: string; // unmatched ad metric row in B
+  intakeB: string; // intake form id in B (Onboarding)
+  intakeTokenB: string; // its public token
+  reviewVersionB: string; // version under reviewItemB (comment-read scoping)
   cookies: Record<"admin" | "member" | "clientA" | "anon", string | null>;
 };
 
@@ -171,6 +176,24 @@ async function setup(): Promise<Fixture> {
     })
     .returning();
 
+  // Onboarding intake in B (submitted, ready to commit) + a version on the
+  // B review item so comment reads can be probed cross-account.
+  const intakeTokenB = randomBytes(24).toString("base64url");
+  const [intakeB] = await db
+    .insert(intakeForms)
+    .values({
+      accountId: b!.id,
+      token: intakeTokenB,
+      sections: { offer: "matrix probe offer" },
+      status: "submitted",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    })
+    .returning();
+  const [reviewVersionB] = await db
+    .insert(reviewVersions)
+    .values({ itemId: reviewItemB!.id, versionNo: 1, fileId: fileB!.id, status: "ready" })
+    .returning();
+
   return {
     accountA: a!.id,
     accountB: b!.id,
@@ -188,6 +211,9 @@ async function setup(): Promise<Fixture> {
     suggestionB: suggestionB!.id,
     metricSourceB: metricSourceB!.id,
     metricRowB: metricRowB!.id,
+    intakeB: intakeB!.id,
+    intakeTokenB,
+    reviewVersionB: reviewVersionB!.id,
     cookies: {
       admin: await mintSession(adminId),
       member: await mintSession(memberId),
@@ -590,6 +616,87 @@ const CASES: Case[] = [
     method: "POST",
     path: (f) => `/api/metrics/rows/${f.metricRowB}/link`,
     body: (f) => ({ creativeId: f.creativeB }),
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  // ===== Onboarding (docs/10 — internal console + hardened public form) =====
+  {
+    name: "GET intakes for B (internal only)",
+    method: "GET",
+    path: (f) => `/api/onboarding/intakes?account=${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST intake link for B (client refused)",
+    method: "POST",
+    path: () => "/api/onboarding/intakes",
+    body: (f) => ({ accountId: f.accountB }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET onboarding templates (internal only)",
+    method: "GET",
+    path: () => "/api/onboarding/templates",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  // Public intake form: session-agnostic; valid token 200, bad token 404.
+  {
+    name: "GET public intake form (valid token, no session required)",
+    method: "GET",
+    path: (f) => `/api/onboarding/form/${f.intakeTokenB}`,
+    expect: { admin: 200, member: 200, clientA: 200, anon: 200 },
+  },
+  {
+    name: "GET public intake form bad token → 404",
+    method: "GET",
+    path: () => "/api/onboarding/form/nosuchtokenxxxxxxxxxxxxx",
+    expect: { admin: 404, member: 404, clientA: 404, anon: 404 },
+  },
+  {
+    // roles run in order: admin commits (201), member hits 409 already-committed
+    name: "POST commit intake in B (client refused; commit-once)",
+    method: "POST",
+    path: (f) => `/api/onboarding/intakes/${f.intakeB}/commit`,
+    body: () => ({ brain: { offer: "matrix probe offer" }, competitors: [], gapTasks: [] }),
+    expect: { admin: 201, member: 409, clientA: 403, anon: ANON },
+  },
+  // ===== Portal (docs/11 — clients reach ONLY their own account's portal) =====
+  {
+    name: "GET portal home for B (client of A: not found)",
+    method: "GET",
+    path: (f) => `/api/portal/${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET portal home for A (client of A may see)",
+    method: "GET",
+    path: (f) => `/api/portal/${f.accountA}`,
+    expect: { admin: 200, member: 200, clientA: 200, anon: ANON },
+  },
+  {
+    name: "GET portal meetings for B (client of A: not found)",
+    method: "GET",
+    path: (f) => `/api/portal/${f.accountB}/meetings`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    // regression for the comment-read leak: version under B's review item
+    name: "GET review comments on B version (client of A: not found)",
+    method: "GET",
+    path: (f) => `/api/review/versions/${f.reviewVersionB}/comments`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    // new rule: bare rejection (no suggestions) is invalid for anyone allowed
+    name: "POST bare post rejection refused; cross-account client 404",
+    method: "POST",
+    path: (f) => `/api/posts/${f.postB}/approval`,
+    body: () => ({ decision: "rejected" }),
+    expect: { admin: 400, member: 400, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET /api/search (internal only)",
+    method: "GET",
+    path: () => "/api/search?q=matrix",
     expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
   },
 ];

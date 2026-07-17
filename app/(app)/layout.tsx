@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import { QueryProvider } from "@/components/query-provider";
 import { NotificationBell } from "@/components/notification-bell";
+import { GlobalSearch } from "@/components/global-search";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -78,6 +79,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
           </nav>
           <div className="flex items-center gap-3">
+            {internal && <GlobalSearch />}
             <NotificationBell />
             <span className="text-xs text-muted">{name || email}</span>
             <form action={doSignOut}>
