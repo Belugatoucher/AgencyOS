@@ -792,12 +792,13 @@ const CASES: Case[] = [
   },
   // ===== Password auth + paid DIY (hardening + db/008) =====
   {
-    // public endpoint, identical 401 for unknown email / wrong password
-    name: "POST password login with bad creds → 401 for everyone",
+    // public endpoint, identical 401 for unknown email / wrong password;
+    // 429 = the per-IP limiter fired first (repeated CI runs) — also a denial
+    name: "POST password login with bad creds → denied for everyone",
     method: "POST",
     path: () => "/api/auth/password-login",
-    body: () => ({ email: "nobody@example.com", password: "definitely-wrong" }),
-    expect: { admin: 401, member: 401, clientA: 401, anon: 401 },
+    body: () => ({ email: `nobody-${Date.now()}@example.com`, password: "definitely-wrong" }),
+    expect: { admin: [401, 429], member: [401, 429], clientA: [401, 429], anon: [401, 429] },
   },
   {
     name: "POST set password (signed-in only)",
@@ -841,6 +842,34 @@ const CASES: Case[] = [
     name: "GET entitlements list (internal only)",
     method: "GET",
     path: (f) => `/api/academy/entitlements?course=${f.paidCourseEntitled}`,
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  // ===== Stripe storefront (db/009) =====
+  {
+    name: "GET /api/diy/catalog (public)",
+    method: "GET",
+    path: () => "/api/diy/catalog",
+    expect: { admin: 200, member: 200, clientA: 200, anon: 200 },
+  },
+  {
+    name: "POST /api/diy/checkout unconfigured → 501 (never open)",
+    method: "POST",
+    path: (f) => "/api/diy/checkout",
+    body: (f) => ({ courseId: f.paidCourseEntitled }),
+    expect: { admin: 501, member: 501, clientA: 501, anon: 501 },
+  },
+  {
+    name: "POST /api/stripe/webhook unconfigured → 501 (never open)",
+    method: "POST",
+    path: () => "/api/stripe/webhook",
+    body: () => ({ id: "evt_probe", type: "checkout.session.completed", data: { object: {} } }),
+    expect: { admin: 501, member: 501, clientA: 501, anon: 501 },
+  },
+  {
+    name: "PATCH course price (internal only)",
+    method: "PATCH",
+    path: (f) => `/api/courses/${f.paidCourseLocked}`,
+    body: () => ({ priceCents: 9900 }),
     expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
   },
 ];

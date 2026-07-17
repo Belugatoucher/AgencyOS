@@ -533,6 +533,19 @@ export const courses = pgTable("courses", {
   position: integer("position").notNull().default(0),
   status: text("status").notNull().default("draft"), // draft|published|archived
   access: text("access").notNull().default("internal"), // internal|paid (db/008, DIY section)
+  priceCents: integer("price_cents"), // db/009: required before a paid course can be sold
+});
+
+// Stripe purchase audit (db/009): one row per completed Checkout Session.
+export const coursePurchases = pgTable("course_purchases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  courseId: uuid("course_id").notNull().references(() => courses.id),
+  userId: uuid("user_id").references(() => users.id),
+  email: text("email").notNull(),
+  stripeSessionId: text("stripe_session_id").notNull().unique(), // idempotency key
+  amountCents: integer("amount_cents").notNull(),
+  status: text("status").notNull().default("paid"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Paid DIY entitlements (db/008): one row grants one user one paid course.
@@ -738,3 +751,4 @@ export type TrainingAssignment = typeof trainingAssignments.$inferSelect;
 export type LessonProgress = typeof lessonProgress.$inferSelect;
 export type NotebookGap = typeof notebookGaps.$inferSelect;
 export type CourseEntitlement = typeof courseEntitlements.$inferSelect;
+export type CoursePurchase = typeof coursePurchases.$inferSelect;

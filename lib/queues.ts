@@ -1,10 +1,10 @@
 import { Queue } from "bullmq";
 import Redis from "ioredis";
 
-// The five queues from docs/00 plus `cron` (see DECISION 2026-07-17): a queue
-// for time-driven internal jobs (recurring task spawning, daily digests) that
-// don't fit media/ai/ghl/publish. Week 1 wired the rails; modules add processors.
-export const QUEUE_NAMES = ["media", "transcribe", "ai", "ghl", "publish", "cron"] as const;
+// The five queues from docs/00 plus `cron` (see DECISION 2026-07-17) and
+// `billing` (Stripe fulfillment — webhook handlers verify, enqueue, 200 in
+// <1s per CLAUDE.md rule 4; the grant itself runs here with retry + job_runs).
+export const QUEUE_NAMES = ["media", "transcribe", "ai", "ghl", "publish", "cron", "billing"] as const;
 export type QueueName = (typeof QUEUE_NAMES)[number];
 
 export function bullConnection(): Redis {

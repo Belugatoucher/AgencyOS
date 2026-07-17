@@ -21,10 +21,17 @@ type CourseDetail = { course: Course; lessons: Lesson[] };
 export function LearnClient() {
   const [open, setOpen] = useState<string | null>(null);
   const { data: courses } = useQuery({ queryKey: ["learn"], queryFn: () => api<Course[]>("/api/learn") });
+  const purchased = typeof window !== "undefined" && window.location.search.includes("purchased=1");
 
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">Your courses</h1>
+      {purchased && (
+        <p className="rounded-md border border-border bg-card p-3 text-sm" data-testid="purchased-banner">
+          🎉 Payment received! Your course unlocks within a minute — check your email for a sign-in link if
+          you're new here, then refresh this page.
+        </p>
+      )}
       {courses?.length ? (
         <ul className="flex flex-col gap-2" data-testid="learn-list">
           {courses.map((c) => (

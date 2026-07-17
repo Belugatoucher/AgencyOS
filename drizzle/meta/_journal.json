@@ -78,6 +78,13 @@
       "when": 1784326448729,
       "tag": "0010_young_abomination",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784327659295,
+      "tag": "0011_blushing_blazing_skull",
+      "breakpoints": true
     }
   ]
 }

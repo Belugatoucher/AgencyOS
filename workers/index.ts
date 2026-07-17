@@ -12,6 +12,7 @@ import { transcribeLesson, transcribeMeeting } from "../lib/transcribe";
 import { embedSop, sopStalenessSweep } from "../lib/services/sops";
 import { embedLesson } from "../lib/services/academy";
 import { notebookGapReport } from "../lib/services/notebook";
+import { completedSession, fulfillStripeSession } from "../lib/services/diy";
 import { applyNotes, generateNotes } from "../lib/services/meeting-notes";
 import { enqueueDuePosts, publishPost } from "../lib/scheduler/publish";
 import { embedResearchDoc } from "../lib/services/research";
@@ -135,6 +136,14 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     // Weekly "SOPs we're missing" report from Notebook gaps (docs/16)
     async "notebook-gap-report"() {
       return notebookGapReport();
+    },
+  },
+  billing: {
+    // Stripe fulfillment (db/009): grant entitlement + record purchase.
+    // Idempotent on the session id, so BullMQ retries are safe.
+    async "stripe-entitle"(job) {
+      const session = completedSession.parse(job.data);
+      return fulfillStripeSession(session);
     },
   },
 };

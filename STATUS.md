@@ -2,6 +2,13 @@
 
 _Last session: 2026-07-17. Read this first next session (HANDOFF.md rule)._
 
+## Stripe for DIY courses (db/009) — COMPLETE
+- **Storefront** — public `/diy` page lists published paid courses with prices (`courses.price_cents`; inline Checkout `price_data`, no dashboard products). Buy → rate-limited `/api/diy/checkout` → Stripe Checkout → back to `/learn?purchased=1`. 501 until `STRIPE_SECRET_KEY` is set; catalog shows "Coming soon".
+- **Fulfillment** — `/api/stripe/webhook` (501 unconfigured, v1 HMAC verified with 5-min replay window) follows rule 4: verify → enqueue `stripe-entitle` on the new `billing` queue → 200 in <1s. The job grants the entitlement (`source='stripe'`, same insert as manual grants), records `course_purchases` (unique session id = idempotency), creates the learner (client role) + sends the sign-in email. BullMQ jobId dedupes webhook redeliveries; replays are no-ops.
+- **Console** — price on course create + "Update price" in the entitlements panel (PATCH `/api/courses/[id]`); purchases show up in the existing entitlements list as `stripe`.
+- **Dependency-free** — `lib/stripe.ts` uses fetch + node:crypto (same posture as Slack/GHL); `signStripePayload` lets tests sign synthetic events.
+- **Verified**: 81 unit (+6 signature verifier: tamper/wrong-secret/stale-timestamp/multi-v1), 364/364 route-matrix (+16: catalog public, checkout+webhook 501-when-unconfigured, PATCH price internal-only), 13 e2e, and a **10-check live pipeline run with a signed synthetic event**: bad sig 401 → signed 200 in <1s → billing worker recorded the purchase, created the learner, granted `source=stripe`, sent the sign-in email → replay added nothing → the buyer's session reached the course and saw it on /learn. Needs Ryan: real `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` (subscribe to `checkout.session.completed` only), then one live test purchase.
+
 ## Hardening pass (post-roadmap, on request) — COMPLETE
 - **Input sanitization** — `lib/sanitize.ts`: every JSON body passes `deepSanitize` (control chars, bidi overrides, zero-width strip) inside `parseBody` before Zod, plus a 2MB cap. Fixed a live XSS: the meeting-search snippet rendered `ts_headline` output as raw HTML — now sentinel-marked, escaped, then highlighted (`safeHighlight`); nothing user-influenced reaches the DOM unescaped.
 - **Portal passwords** — opt-in email+password sign-in beside magic links: scrypt (`users.password_hash`, migration 0010), login mints the same DB session Auth.js reads, per-email/per-IP rate limits, enumeration-safe identical 401s (incl. dummy-verify timing). Set/rotate in portal → Settings; login page gains "sign in with a password instead".

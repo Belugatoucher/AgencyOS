@@ -44,7 +44,30 @@ export const courseInput = z.object({
   required: z.boolean().default(false),
   position: z.number().int().min(0).default(0),
   access: z.enum(["internal", "paid"]).default("internal"), // paid = DIY section (db/008)
+  priceCents: z.number().int().min(100).max(10_000_000).nullish(), // db/009: sale price
 });
+
+export const courseUpdateInput = courseInput.partial();
+
+export async function updateCourse(
+  viewer: Viewer,
+  id: string,
+  input: z.infer<typeof courseUpdateInput>,
+): Promise<Result<Course>> {
+  const g = guard(viewer);
+  if (!g.ok) return g as Result<never>;
+  const patch: Partial<typeof courses.$inferInsert> = {};
+  if (input.title !== undefined) patch.title = input.title;
+  if (input.description !== undefined) patch.description = input.description ?? null;
+  if (input.audienceRoles !== undefined) patch.audienceRoles = input.audienceRoles;
+  if (input.required !== undefined) patch.required = input.required;
+  if (input.position !== undefined) patch.position = input.position;
+  if (input.access !== undefined) patch.access = input.access;
+  if (input.priceCents !== undefined) patch.priceCents = input.priceCents ?? null;
+  const [row] = await db.update(courses).set(patch).where(eq(courses.id, id)).returning();
+  if (!row) return err("not_found", "Course not found");
+  return ok(row);
+}
 
 export const quizSchema = z.object({
   pass_threshold: z.number().min(0).max(1).default(0.8),
@@ -82,7 +105,7 @@ export async function createCourse(viewer: Viewer, input: z.infer<typeof courseI
   if (!g.ok) return g as Result<never>;
   const [row] = await db
     .insert(courses)
-    .values({ ...input, description: input.description ?? null })
+    .values({ ...input, description: input.description ?? null, priceCents: input.priceCents ?? null })
     .returning();
   return ok(row!);
 }

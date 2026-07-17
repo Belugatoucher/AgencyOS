@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Badge, Button, Card, Input, Select } from "@/components/ui";
 import { api } from "@/lib/fetcher";
 
-type Course = { id: string; title: string; description: string | null; status: string; lessonCount: number; required: boolean; access: string };
+type Course = { id: string; title: string; description: string | null; status: string; lessonCount: number; required: boolean; access: string; priceCents: number | null };
 type Entitlement = { id: string; email: string; source: string };
 type Lesson = {
   id: string;
@@ -57,11 +57,20 @@ function CoursesPanel() {
   const qc = useQueryClient();
   const [title, setTitle] = useState("");
   const [access, setAccess] = useState("internal");
+  const [price, setPrice] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const { data: courses } = useQuery({ queryKey: ["courses"], queryFn: () => api<Course[]>("/api/courses") });
 
   const create = useMutation({
-    mutationFn: () => api<Course>("/api/courses", { method: "POST", body: JSON.stringify({ title, access }) }),
+    mutationFn: () =>
+      api<Course>("/api/courses", {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          access,
+          priceCents: access === "paid" && price ? Math.round(Number(price) * 100) : null,
+        }),
+      }),
     onSuccess: () => {
       setTitle("");
       qc.invalidateQueries({ queryKey: ["courses"] });
@@ -81,6 +90,9 @@ function CoursesPanel() {
             <option value="internal">internal (team training)</option>
             <option value="paid">paid (DIY section)</option>
           </Select>
+          {access === "paid" && (
+            <Input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Price $" className="w-24" data-testid="course-price" />
+          )}
           <Button disabled={!title.trim() || create.isPending} onClick={() => create.mutate()} data-testid="course-create">
             Create
           </Button>
@@ -98,7 +110,9 @@ function CoursesPanel() {
                   </button>
                   <span className="flex items-center gap-2">
                     {c.required && <Badge>required</Badge>}
-                    {c.access === "paid" && <Badge>💳 paid</Badge>}
+                    {c.access === "paid" && (
+                      <Badge>💳 {c.priceCents ? `$${(c.priceCents / 100).toFixed(0)}` : "no price"}</Badge>
+                    )}
                     <Badge>{c.status}</Badge>
                     {c.status === "draft" && (
                       <Button variant="outline" onClick={() => publish.mutate(c.id)} data-testid="course-publish">
@@ -260,8 +274,22 @@ function QuizForm({
 function EntitlementsPanel({ courseId }: { courseId: string }) {
   const qc = useQueryClient();
   const [email, setEmail] = useState("");
+  const [newPrice, setNewPrice] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const key = ["entitlements", courseId];
+  const setPrice = useMutation({
+    mutationFn: () =>
+      api(`/api/courses/${courseId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ priceCents: Math.round(Number(newPrice) * 100) }),
+      }),
+    onSuccess: () => {
+      setMsg("Price updated — live on /diy immediately.");
+      setNewPrice("");
+      qc.invalidateQueries({ queryKey: ["courses"] });
+    },
+    onError: (e) => setMsg((e as Error).message),
+  });
   const { data: rows } = useQuery({
     queryKey: key,
     queryFn: () => api<Entitlement[]>(`/api/academy/entitlements?course=${courseId}`),
@@ -279,7 +307,13 @@ function EntitlementsPanel({ courseId }: { courseId: string }) {
 
   return (
     <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-sm">
-      <p className="text-xs font-medium text-muted">Paid access (DIY learners)</p>
+      <p className="text-xs font-medium text-muted">Paid access (DIY learners) — sold at /diy via Stripe; manual grants below</p>
+      <div className="flex gap-2">
+        <Input value={newPrice} onChange={(e) => setNewPrice(e.target.value)} placeholder="Set price $" className="w-28" data-testid="price-edit" />
+        <Button variant="outline" disabled={!newPrice || setPrice.isPending} onClick={() => setPrice.mutate()} data-testid="price-save">
+          Update price
+        </Button>
+      </div>
       <div className="flex gap-2">
         <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="learner@example.com" className="flex-1" data-testid="grant-email" />
         <Button disabled={!email.trim() || grant.isPending} onClick={() => grant.mutate()} data-testid="grant-go">
