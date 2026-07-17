@@ -12,6 +12,7 @@ import { transcribeMeeting } from "../lib/transcribe";
 import { applyNotes, generateNotes } from "../lib/services/meeting-notes";
 import { enqueueDuePosts, publishPost } from "../lib/scheduler/publish";
 import { embedResearchDoc } from "../lib/services/research";
+import { rollupAllAccounts, unmatchedSpendDigest } from "../lib/services/metrics";
 
 // Worker skeleton: every queue gets a Worker whose processors dispatch by job
 // name and always record a job_runs row (docs/00 — failures surface in
@@ -90,6 +91,14 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     // Enqueue due scheduled posts for publishing (docs/06)
     async "publish-sweep"() {
       return enqueueDuePosts();
+    },
+    // Nightly rollup (docs/09): metric_rows → creatives.metrics + is_winning
+    async "metrics-rollup"() {
+      return rollupAllAccounts();
+    },
+    // Weekly unmatched-spend digest (docs/09)
+    async "unmatched-spend-digest"() {
+      return unmatchedSpendDigest();
     },
   },
 };
@@ -170,6 +179,16 @@ async function registerSchedules() {
     "publish-sweep",
     {},
     { repeat: { pattern: "*/2 * * * *" }, jobId: "publish-sweep" }, // every 2 min
+  );
+  await cron.add(
+    "metrics-rollup",
+    {},
+    { repeat: { pattern: "30 2 * * *" }, jobId: "metrics-rollup" }, // nightly 02:30
+  );
+  await cron.add(
+    "unmatched-spend-digest",
+    {},
+    { repeat: { pattern: "0 9 * * 1" }, jobId: "unmatched-spend-digest" }, // Mon 09:00
   );
   console.log("[worker] cron schedules registered");
 }

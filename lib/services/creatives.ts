@@ -81,9 +81,31 @@ export async function listCreatives(
 }
 
 /**
- * Recompute is_winning for an account (docs/08 + docs/09): top quartile on the
- * primary KPI with a minimum spend threshold — computed, not vibes.
+ * Top-quartile winner selection on the primary KPI with a minimum spend
+ * threshold (docs/08 + docs/09) — computed, not vibes. Pure, so it's testable.
  */
+export function computeWinnerIds(
+  rows: { id: string; spendCents: number; metrics: unknown }[],
+  primaryKpi: string,
+  minSpendCents: number,
+): Set<string> {
+  const eligible = rows.filter(
+    (c) =>
+      c.spendCents >= minSpendCents &&
+      typeof (c.metrics as Record<string, number>)[primaryKpi] === "number",
+  );
+  if (eligible.length === 0) return new Set();
+  const values = eligible
+    .map((c) => (c.metrics as Record<string, number>)[primaryKpi]!)
+    .sort((a, b) => a - b);
+  // top quartile = best ceil(n/4) creatives; ties at the cutoff all count
+  const cutoff = values[values.length - Math.ceil(values.length / 4)]!;
+  return new Set(
+    eligible.filter((c) => (c.metrics as Record<string, number>)[primaryKpi]! >= cutoff).map((c) => c.id),
+  );
+}
+
+/** Recompute is_winning for an account and persist changed flags. */
 export async function recomputeWinning(
   accountId: string,
   opts: { primaryKpi?: string; minSpendCents?: number } = {},
@@ -92,28 +114,13 @@ export async function recomputeWinning(
   const minSpend = opts.minSpendCents ?? 10_000; // $100 default floor
 
   const rows = await db.select().from(creatives).where(eq(creatives.accountId, accountId));
-  const eligible = rows.filter(
-    (c) => c.spendCents >= minSpend && typeof (c.metrics as Record<string, number>)[primaryKpi] === "number",
-  );
-  if (eligible.length === 0) {
-    // nothing qualifies — clear all winning flags
-    await db.update(creatives).set({ isWinning: false }).where(eq(creatives.accountId, accountId));
-    return { winners: 0, total: rows.length };
-  }
-  const values = eligible
-    .map((c) => (c.metrics as Record<string, number>)[primaryKpi]!)
-    .sort((a, b) => a - b);
-  const cutoff = values[Math.max(0, Math.ceil(values.length * 0.75) - 1)]!;
-
-  let winners = 0;
+  const winnerIds = computeWinnerIds(rows, primaryKpi, minSpend);
   for (const c of rows) {
-    const kpi = (c.metrics as Record<string, number>)[primaryKpi];
-    const isWinning = c.spendCents >= minSpend && typeof kpi === "number" && kpi >= cutoff;
-    if (isWinning) winners++;
+    const isWinning = winnerIds.has(c.id);
     if (isWinning !== c.isWinning) {
       await db.update(creatives).set({ isWinning }).where(eq(creatives.id, c.id));
     }
   }
-  return { winners, total: rows.length };
+  return { winners: winnerIds.size, total: rows.length };
 }
 
