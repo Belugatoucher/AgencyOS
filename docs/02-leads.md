@@ -51,12 +51,12 @@ This is the retention play: a client watching their pipeline fill in real time i
 
 ## Build checklist
 
-- [ ] Pipelines/stages CRUD + seeded defaults + card component
-- [ ] Lead CRUD, inline editing, drag kanban, table + filters, drawer with timeline
-- [ ] CSV import + public intake endpoint per pipeline
-- [ ] All-accounts overview + metrics strip + no-next-action nagging
-- [ ] Portal leads page (summary/full modes)
-- [ ] AI scoring (unchanged from before)
+- [x] Pipelines/stages CRUD + seeded defaults + card component
+- [x] Lead CRUD, inline editing, drag kanban, table + filters, drawer with timeline
+- [x] CSV import + public intake endpoint per pipeline
+- [x] All-accounts overview + metrics strip + no-next-action nagging
+- [ ] Portal leads page (summary/full modes) — deferred to Week 10 (portal, doc 11)
+- [x] AI scoring (unchanged from before)
 - [ ] GHL connector (appendix) — build only when you actually have GHL
 
 ## Appendix: GHL sync engine (deferred, unchanged design)

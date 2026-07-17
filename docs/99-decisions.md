@@ -14,6 +14,30 @@ Format:
 
 ---
 
+## 2026-07-17 — Leads are internal-only in Week 3; portal leads page deferred
+**Context:** docs/02 describes an optional per-account client portal leads page (`portal_leads: off|summary|full`), but the roadmap puts the whole client portal in Week 10 (doc 11).
+**Decision:** All pipeline/stage/lead routes and services are internal-only (admin/member). Clients get 403; the route-matrix proves it. `accounts.portal_leads` and `leads.client_hidden` columns exist and are respected in writes, but no client-facing read path is wired yet.
+**Alternatives considered:** building the summary/full portal views now — premature before the portal shell exists.
+**Revisit if:** Week 10 portal (doc 11) — wire the read-only summary/full views then, honoring `client_hidden` and stripping internal-only fields.
+
+## 2026-07-17 — Pipelines always belong to an account (no null-account pipeline)
+**Context:** docs/02 says the agency tracks its own prospects; I initially modeled that as a null-account pipeline. `db/006-leads-manual.sql` makes `pipelines.account_id NOT NULL`.
+**Decision:** Every pipeline has an account. The agency's own prospect pipeline lives under the agency's internal account (a real account row). `leads.account_id` stays nullable per the base schema but is derived from the pipeline on create.
+**Alternatives considered:** relaxing the FK to nullable — diverges from the spec SQL, which is law (CLAUDE.md rule 1).
+**Revisit if:** never, unless the schema SQL changes.
+
+## 2026-07-17 — Lead scoring model + dropped temperature
+**Context:** prompts/lead-scoring.md frontmatter names `claude-sonnet-4-6` at `temp 0`. That model's successor is `claude-sonnet-5`, on which non-default sampling params (temperature) are rejected by the API (400).
+**Decision:** Model is `LEAD_SCORING_MODEL` env, defaulting to `claude-sonnet-5`. The prompt *text* is loaded verbatim from prompts/lead-scoring.md (CLAUDE.md rule 6); `temperature` is omitted. Output is Zod-validated JSON with one retry, then the job fails loudly (rule 6). The extraction is a security boundary (audit item 8): Zod strips any injected extra fields.
+**Alternatives considered:** pinning `claude-sonnet-4-6` to honor the frontmatter literally — it still works, but the current Sonnet is the better default; keeping temperature — a guaranteed 400 on the default model.
+**Revisit if:** a newer scoring-appropriate model ships, or structured-output (`output_config.format`) is preferred over parse-with-retry.
+
+## 2026-07-17 — Public intake honeypot passes schema, drops at the service
+**Context:** Audit item 6 wants a honeypot on the public intake form. A Zod `max(0)` on the honeypot field would reject bots with a distinct 400, letting them detect and strip the field.
+**Decision:** The honeypot (`website_url`) is an ordinary optional string in the schema; `ingestIntake` drops any submission that filled it and still returns a 200, indistinguishable from a real success. Per-IP rate limiting, a 16KB body cap, and identical responses for unknown tokens round out the endpoint.
+**Alternatives considered:** `max(0)` schema rejection — leaks the honeypot via a distinct error.
+**Revisit if:** Turnstile is wired (env keys already present) — add server-side verification alongside the honeypot.
+
 ## 2026-07-17 — Custom Auth.js adapter instead of @auth/drizzle-adapter
 **Context:** Only the email (magic link) provider with database sessions is used; the stock Drizzle adapter demands an oauth `accounts` table whose name collides with the domain `accounts` (client companies) table.
 **Decision:** ~80-line custom adapter (`lib/auth/adapter.ts`): users + sessions + verification_tokens only. `createUser` throws — sign-ups are invite-only; delivery is already gated on an existing user. Schema gained `users.email_verified`, `sessions`, `verification_tokens` (db/schema.sql updated same commit).
