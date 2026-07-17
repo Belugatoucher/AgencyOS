@@ -3,6 +3,7 @@ import { ZodError, type ZodType, type z } from "zod";
 import type { Viewer } from "@/lib/access";
 import { currentViewer } from "@/lib/auth/session";
 import { statusForError, type Result } from "@/lib/result";
+import { deepSanitize } from "@/lib/sanitize";
 
 // Route handler shape (CLAUDE.md rule 2): parse (Zod) → auth → service → respond.
 // withViewer handles auth + Result mapping so handlers stay one-liners.
@@ -42,6 +43,19 @@ export function respond<T>(result: Result<T>, okStatus = 200): Response {
   return NextResponse.json(result.value, { status: okStatus });
 }
 
+// Body cap: JSON payloads have no legitimate reason to exceed this (large
+// text fields like research pastes stay well under it; files go to R2).
+const MAX_JSON_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Parse + validate a JSON body. Every string in the payload passes through
+ * deepSanitize (control/bidi/zero-width strip) BEFORE Zod — the global input
+ * sanitization layer; Zod then enforces shape and size.
+ */
 export async function parseBody<S extends ZodType>(req: Request, schema: S): Promise<z.output<S>> {
-  return schema.parse(await req.json());
+  const raw = await req.text();
+  if (raw.length > MAX_JSON_BYTES) {
+    throw new ZodError([{ code: "custom", message: "Payload too large", path: [] }]);
+  }
+  return schema.parse(deepSanitize(JSON.parse(raw)));
 }

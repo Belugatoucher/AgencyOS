@@ -34,6 +34,7 @@ export default async function PortalLayout(props: {
     { href: `${base}/content`, label: "Content" },
     { href: `${base}/files`, label: "Files" },
     { href: `${base}/meetings`, label: "Meetings" },
+    { href: `${base}/settings`, label: "Settings" },
   ];
 
   return (

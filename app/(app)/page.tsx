@@ -9,5 +9,7 @@ export default async function Home() {
   if (!viewer) redirect("/login");
   if (isInternal(viewer)) redirect("/tasks");
   if (viewer.membershipAccountIds.length === 1) redirect(`/portal/${viewer.membershipAccountIds[0]}`);
+  // No client-account membership → a DIY learner (db/008); their shelf is /learn.
+  if (viewer.membershipAccountIds.length === 0) redirect("/learn");
   redirect("/accounts");
 }

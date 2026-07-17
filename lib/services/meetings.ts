@@ -12,6 +12,7 @@ import {
   type Transcript,
 } from "@/lib/db/schema";
 import { err, ok, type Result } from "@/lib/result";
+import { HIGHLIGHT_START, HIGHLIGHT_STOP, safeHighlight } from "@/lib/sanitize";
 import { getQueue } from "@/lib/queues";
 
 export const createMeetingInput = z.object({
@@ -198,11 +199,14 @@ export async function searchMeetings(
       meetingId: meetings.id,
       title: meetings.title,
       occurredAt: meetings.occurredAt,
-      snippet: sql<string>`ts_headline('english', ${transcripts.segments}::text, plainto_tsquery('english', ${q}), 'MaxFragments=1,MaxWords=20')`,
+      // Sentinel markers instead of <b> tags: the transcript text is
+      // attacker-influenced, so it gets HTML-escaped BEFORE highlighting
+      // (safeHighlight) — the UI must never receive raw markup from here.
+      snippet: sql<string>`ts_headline('english', ${transcripts.segments}::text, plainto_tsquery('english', ${q}), ${`MaxFragments=1,MaxWords=20,StartSel=${HIGHLIGHT_START},StopSel=${HIGHLIGHT_STOP}`})`,
     })
     .from(transcripts)
     .innerJoin(meetings, eq(meetings.id, transcripts.meetingId))
     .where(match)
     .limit(20);
-  return ok(rows);
+  return ok(rows.map((r) => ({ ...r, snippet: safeHighlight(r.snippet) })));
 }

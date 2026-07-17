@@ -1,6 +1,13 @@
-# STATUS — through Weeks 11-12: Academy (SOPs · Training · Notebook)
+# STATUS — through Weeks 11-12 + hardening pass (sanitization · password auth · paid DIY · local hosting)
 
 _Last session: 2026-07-17. Read this first next session (HANDOFF.md rule)._
+
+## Hardening pass (post-roadmap, on request) — COMPLETE
+- **Input sanitization** — `lib/sanitize.ts`: every JSON body passes `deepSanitize` (control chars, bidi overrides, zero-width strip) inside `parseBody` before Zod, plus a 2MB cap. Fixed a live XSS: the meeting-search snippet rendered `ts_headline` output as raw HTML — now sentinel-marked, escaped, then highlighted (`safeHighlight`); nothing user-influenced reaches the DOM unescaped.
+- **Portal passwords** — opt-in email+password sign-in beside magic links: scrypt (`users.password_hash`, migration 0010), login mints the same DB session Auth.js reads, per-email/per-IP rate limits, enumeration-safe identical 401s (incl. dummy-verify timing). Set/rotate in portal → Settings; login page gains "sign in with a password instead".
+- **Paid DIY Academy** (db/008) — `courses.access` internal|paid + `course_entitlements`. External learners (client role, no memberships) land on `/learn`, see only entitled published paid courses, and complete lessons/quizzes through the same services under the new `canUseCourse` guard (404s, unprobeable). Team grants access by email in the Academy console (creates the learner + sends sign-in); Stripe webhook later does the same insert with `source='stripe'`. Internal courses stay invisible to all externals.
+- **Local-only hosting** — `docker-compose.local.yml` (+`.env.local-hosting.example`, docs/20): app/worker/pgvector-Postgres/Redis/MinIO on one machine, loopback-bound, zero cloud requirements; AI keys optional and degrade loudly. A `local-only` branch marks the divergence point (a true self-fork isn't possible on GitHub; see decisions).
+- **Verified**: 75 unit (+8 sanitize/password), 348/348 route-matrix (+32: bad-creds 401s, set-password auth, /learn, entitled-vs-locked paid course 200/404, internal course hidden from externals, entitlement routes internal-only), 13 e2e (+password-diy: set password → wrong-then-right UI login → lands on /learn → sees only entitled course → completes lesson → /academy blocked).
 
 ## Weeks 11-12 — Academy (docs/16) — COMPLETE (MVP scope; see checklist)
 Replaces Trainual/Notion-wiki/NotebookLM on the existing rails: files/media workers, whisper, the wk8 RAG layer, notifications. All of it internal-only — clients never see training or the handbook.

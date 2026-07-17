@@ -5,7 +5,8 @@ import { useState } from "react";
 import { Badge, Button, Card, Input, Select } from "@/components/ui";
 import { api } from "@/lib/fetcher";
 
-type Course = { id: string; title: string; description: string | null; status: string; lessonCount: number; required: boolean };
+type Course = { id: string; title: string; description: string | null; status: string; lessonCount: number; required: boolean; access: string };
+type Entitlement = { id: string; email: string; source: string };
 type Lesson = {
   id: string;
   position: number;
@@ -55,11 +56,12 @@ export function AcademyClient({ isAdmin }: { isAdmin: boolean }) {
 function CoursesPanel() {
   const qc = useQueryClient();
   const [title, setTitle] = useState("");
+  const [access, setAccess] = useState("internal");
   const [selected, setSelected] = useState<string | null>(null);
   const { data: courses } = useQuery({ queryKey: ["courses"], queryFn: () => api<Course[]>("/api/courses") });
 
   const create = useMutation({
-    mutationFn: () => api<Course>("/api/courses", { method: "POST", body: JSON.stringify({ title }) }),
+    mutationFn: () => api<Course>("/api/courses", { method: "POST", body: JSON.stringify({ title, access }) }),
     onSuccess: () => {
       setTitle("");
       qc.invalidateQueries({ queryKey: ["courses"] });
@@ -75,6 +77,10 @@ function CoursesPanel() {
       <Card title="New course">
         <div className="flex gap-2">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Course title" className="flex-1" data-testid="course-title" />
+          <Select value={access} onChange={(e) => setAccess(e.target.value)} data-testid="course-access">
+            <option value="internal">internal (team training)</option>
+            <option value="paid">paid (DIY section)</option>
+          </Select>
           <Button disabled={!title.trim() || create.isPending} onClick={() => create.mutate()} data-testid="course-create">
             Create
           </Button>
@@ -92,6 +98,7 @@ function CoursesPanel() {
                   </button>
                   <span className="flex items-center gap-2">
                     {c.required && <Badge>required</Badge>}
+                    {c.access === "paid" && <Badge>💳 paid</Badge>}
                     <Badge>{c.status}</Badge>
                     {c.status === "draft" && (
                       <Button variant="outline" onClick={() => publish.mutate(c.id)} data-testid="course-publish">
@@ -100,7 +107,12 @@ function CoursesPanel() {
                     )}
                   </span>
                 </div>
-                {selected === c.id && <CourseDetailPanel courseId={c.id} />}
+                {selected === c.id && (
+                  <>
+                    <CourseDetailPanel courseId={c.id} />
+                    {c.access === "paid" && <EntitlementsPanel courseId={c.id} />}
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -241,6 +253,50 @@ function QuizForm({
         Submit answers
       </Button>
       {result && <p className="text-muted">{result}</p>}
+    </div>
+  );
+}
+
+function EntitlementsPanel({ courseId }: { courseId: string }) {
+  const qc = useQueryClient();
+  const [email, setEmail] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const key = ["entitlements", courseId];
+  const { data: rows } = useQuery({
+    queryKey: key,
+    queryFn: () => api<Entitlement[]>(`/api/academy/entitlements?course=${courseId}`),
+  });
+  const grant = useMutation({
+    mutationFn: () =>
+      api("/api/academy/entitlements", { method: "POST", body: JSON.stringify({ courseId, email }) }),
+    onSuccess: () => {
+      setEmail("");
+      setMsg("Access granted — they got a sign-in email.");
+      qc.invalidateQueries({ queryKey: key });
+    },
+    onError: (e) => setMsg((e as Error).message),
+  });
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-sm">
+      <p className="text-xs font-medium text-muted">Paid access (DIY learners)</p>
+      <div className="flex gap-2">
+        <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="learner@example.com" className="flex-1" data-testid="grant-email" />
+        <Button disabled={!email.trim() || grant.isPending} onClick={() => grant.mutate()} data-testid="grant-go">
+          Grant access
+        </Button>
+      </div>
+      {msg && <p className="text-xs text-muted">{msg}</p>}
+      {rows && rows.length > 0 && (
+        <ul className="flex flex-col gap-1" data-testid="entitlements-list">
+          {rows.map((r) => (
+            <li key={r.id} className="flex items-center justify-between rounded-md border border-border p-2">
+              <span>{r.email}</span>
+              <Badge>{r.source}</Badge>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

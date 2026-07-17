@@ -14,6 +14,30 @@ Format:
 
 ---
 
+## 2026-07-17 — Global input sanitization layer + snippet XSS fix
+**Context:** Requested hardening pass. Zod already gates shape/size on every boundary, but nothing handled control characters, Unicode bidi/zero-width spoofing, or the one place raw HTML reached the DOM: the meeting-search snippet (`ts_headline` output rendered via dangerouslySetInnerHTML — a live XSS vector through transcript text).
+**Decision:** `lib/sanitize.ts` — `deepSanitize` strips C0/C1 controls (keeping \n/\t), bidi overrides/isolates, and zero-width chars from every string in every JSON body, wired into `parseBody` (plus a 2MB body cap) so ALL routes get it before Zod. Output side: `ts_headline` now emits sentinel markers; `safeHighlight` HTML-escapes the whole snippet first and only then converts sentinels to `<b>` — injected markup can't survive. The public login/intake routes that bypass parseBody call deepSanitize directly.
+**Alternatives considered:** a sanitizer library (DOMPurify et al) — we render no user HTML anywhere, so escaping + character stripping covers the actual surface without a dependency.
+**Revisit if:** user-authored rich text/markdown rendering lands (then add proper markdown sanitization at render).
+
+## 2026-07-17 — Portal password login: scrypt + minted DB sessions beside magic links
+**Context:** Requested username/password sign-in for portal clients. Auth.js credentials providers don't play well with database sessions, and magic links must remain.
+**Decision:** `users.password_hash` (nullable — password is opt-in), scrypt (N=2^15, per-password salt, constant-time compare, `scrypt$salt$hash` format; node:crypto, no new dependency). Login route verifies and mints a row in the same `sessions` table Auth.js reads, setting the same cookie (secure-prefixed on https) — one session pipeline, two front doors. Posture mirrors the magic-link audit items: per-email (5/15min) + per-IP (20/15min) limits, identical 401s for unknown email / no password / wrong password, and a dummy scrypt verify on missing users so timing doesn't enumerate. Set/rotate at portal Settings after any signed-in session; min length 10, no composition rules.
+**Alternatives considered:** Auth.js Credentials provider — JWT-session oriented, fights the database-session strategy the audit chose; bcrypt — another dependency for no gain over scrypt.
+**Revisit if:** MFA is wanted (TOTP slots in beside the password check) or password reset by email is needed (magic link already IS the reset path).
+
+## 2026-07-17 — Paid DIY courses: entitlement rows, manual grants first, payments later
+**Context:** Requested a paid-access Academy section. No payment processor is wired yet.
+**Decision:** `courses.access` internal|paid + `course_entitlements` (unique user×course, `source` manual|stripe) in db/008. Access rule: internal users see everything; external learners need an entitlement to a PUBLISHED paid course — denials are 404 so entitlement existence isn't probeable, and internal-access courses stay invisible to all externals. Learners are `client`-role users with no memberships; they land on `/learn` (their entitled shelf) and reuse the same lesson/quiz services now guarded by `canUseCourse`. Grants are manual (admin console, by email — creates the user + sends the sign-in pointer); a Stripe webhook later performs the identical insert with `source='stripe'`.
+**Alternatives considered:** a new `student` role — ripples through every access check for no isolation gain; per-lesson entitlements — courses are the unit people buy.
+**Revisit if:** Stripe lands (webhook + checkout link on a public course page) or courses need expiry/refunds (add `expires_at`/`revoked_at`).
+
+## 2026-07-17 — Local-only hosting is a compose profile, not a fork
+**Context:** Request to "fork the repo and rebuild for local-only hosting." GitHub cannot fork a repo into its own account, and this workspace's GitHub access is scoped to this repository only — no new repo can be created or pushed from here.
+**Decision:** Local-only is `docker-compose.local.yml` + `.env.local-hosting.example` + docs/20-local-hosting.md on the SAME codebase: MinIO replaces R2 (the S3 client was already endpoint/path-style ready), dev-mailbox or LAN SMTP replaces the mail provider, password login removes day-to-day magic-link dependence, ports bind to loopback, and every cloud key is optional-and-degrades-loudly. A `local-only` branch is pushed as the divergence point if a true split repo is wanted later — but keeping one codebase means every future module lands in both deployments for free.
+**Alternatives considered:** a real fork/second repo — permanent double maintenance for what is, in practice, one compose file of difference.
+**Revisit if:** the local variant needs to *remove* cloud code paths entirely (air-gapped compliance), at which point mirror to a separate repo and cherry-pick.
+
 ## 2026-07-17 — Notebook prompt added as prompts/notebook.md (pack had none)
 **Context:** docs/16 specifies the Notebook uses "the same tool-use pattern as Ask the Brain, scoped to kb chunks," but the spec pack shipped no prompt file for it; CLAUDE.md rule 6 wants prompts loaded verbatim from prompts/.
 **Decision:** Wrote prompts/notebook.md following the pack's exact conventions (frontmatter, fenced system prompt, tools list, post-processing) so the runtime loads it the same way as every other prompt. The scope wall is enforced twice: in the prompt (rule 2) and structurally — the Notebook's two tools (search_handbook/get_sop) can only reach kb_chunks/sops, and no Ask-the-Brain tool touches kb_chunks.

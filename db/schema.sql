@@ -29,6 +29,7 @@ create table users (
   name text not null default '',         -- '' until invite/profile fills it (Auth.js creates by email)
   role text not null default 'member',   -- admin|member|client
   email_verified timestamptz,            -- Auth.js: set on first magic-link login
+  password_hash text,                    -- optional scrypt hash (portal password login; null = magic-link only)
   created_at timestamptz not null default now()
 );
 

@@ -1,6 +1,6 @@
 // Typed Result returns from services (CLAUDE.md style rules).
 export type ServiceError = {
-  code: "forbidden" | "not_found" | "invalid" | "conflict" | "internal";
+  code: "forbidden" | "not_found" | "invalid" | "conflict" | "internal" | "unauthorized" | "rate_limited";
   message: string; // human, user-facing
 };
 
@@ -20,4 +20,6 @@ export const statusForError: Record<ServiceError["code"], number> = {
   invalid: 400,
   conflict: 409,
   internal: 500,
+  unauthorized: 401,
+  rate_limited: 429,
 };

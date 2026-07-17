@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/lib/auth";
+import { PasswordLogin } from "./password-login";
 
 export default async function LoginPage(props: {
   searchParams: Promise<{ error?: string }>;
@@ -45,6 +46,7 @@ export default async function LoginPage(props: {
           Send magic link
         </button>
       </form>
+      <PasswordLogin />
     </main>
   );
 }

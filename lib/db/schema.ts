@@ -47,6 +47,8 @@ export const users = pgTable("users", {
   role: text("role").notNull().default("member"), // admin|member|client
   // Auth.js requirement; set on first successful magic-link login.
   emailVerified: timestamp("email_verified", { withTimezone: true }),
+  // Optional scrypt hash (portal password login); null = magic-link only.
+  passwordHash: text("password_hash"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -530,7 +532,22 @@ export const courses = pgTable("courses", {
   required: boolean("required").notNull().default(false),
   position: integer("position").notNull().default(0),
   status: text("status").notNull().default("draft"), // draft|published|archived
+  access: text("access").notNull().default("internal"), // internal|paid (db/008, DIY section)
 });
+
+// Paid DIY entitlements (db/008): one row grants one user one paid course.
+export const courseEntitlements = pgTable(
+  "course_entitlements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    courseId: uuid("course_id").notNull().references(() => courses.id),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    source: text("source").notNull().default("manual"), // manual|stripe
+    grantedBy: uuid("granted_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("course_entitlements_course_user").on(t.courseId, t.userId)],
+);
 
 export const lessons = pgTable("lessons", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -720,3 +737,4 @@ export type Lesson = typeof lessons.$inferSelect;
 export type TrainingAssignment = typeof trainingAssignments.$inferSelect;
 export type LessonProgress = typeof lessonProgress.$inferSelect;
 export type NotebookGap = typeof notebookGaps.$inferSelect;
+export type CourseEntitlement = typeof courseEntitlements.$inferSelect;

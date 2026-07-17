@@ -43,6 +43,7 @@ export const courseInput = z.object({
   audienceRoles: z.array(z.string().max(30)).max(10).default([]),
   required: z.boolean().default(false),
   position: z.number().int().min(0).default(0),
+  access: z.enum(["internal", "paid"]).default("internal"), // paid = DIY section (db/008)
 });
 
 export const quizSchema = z.object({
@@ -148,8 +149,10 @@ export type CourseDetail = {
 };
 
 export async function getCourse(viewer: Viewer, id: string): Promise<Result<CourseDetail>> {
-  const g = guard(viewer);
-  if (!g.ok) return g as Result<never>;
+  // Internal users always; external learners via a paid-course entitlement
+  // (db/008). Denial is a 404 either way — nothing to probe.
+  const { canUseCourse } = await import("@/lib/services/diy");
+  if (!(await canUseCourse(viewer, id))) return err("not_found", "Course not found");
   const [course] = await db.select().from(courses).where(eq(courses.id, id));
   if (!course) return err("not_found", "Course not found");
   const rows = await db
@@ -236,10 +239,10 @@ export async function submitQuiz(
   lessonId: string,
   answers: number[],
 ): Promise<Result<ReturnType<typeof gradeQuiz>>> {
-  const g = guard(viewer);
-  if (!g.ok) return g as Result<never>;
   const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId));
   if (!lesson) return err("not_found", "Lesson not found");
+  const { canUseCourse } = await import("@/lib/services/diy");
+  if (!(await canUseCourse(viewer, lesson.courseId))) return err("not_found", "Lesson not found");
   const quiz = quizSchema.safeParse(lesson.quiz);
   if (!quiz.success) return err("invalid", "This lesson has no quiz");
   if (answers.length !== quiz.data.questions.length) return err("invalid", "Answer every question");
@@ -269,10 +272,10 @@ export async function submitQuiz(
 
 /** Mark a non-quiz lesson done ("mark understood" gate for sop/doc/video). */
 export async function completeLesson(viewer: Viewer, lessonId: string): Promise<Result<{ status: string }>> {
-  const g = guard(viewer);
-  if (!g.ok) return g as Result<never>;
   const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId));
   if (!lesson) return err("not_found", "Lesson not found");
+  const { canUseCourse } = await import("@/lib/services/diy");
+  if (!(await canUseCourse(viewer, lesson.courseId))) return err("not_found", "Lesson not found");
   if (lesson.quiz) return err("invalid", "This lesson completes by passing its quiz");
   await db
     .insert(lessonProgress)

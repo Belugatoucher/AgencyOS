@@ -61,6 +61,8 @@ type Fixture = {
   intakeTokenB: string; // its public token
   reviewVersionB: string; // version under reviewItemB (comment-read scoping)
   courseId: string; // published Academy course (global, internal-only)
+  paidCourseEntitled: string; // paid course clientA is entitled to
+  paidCourseLocked: string; // paid course clientA is NOT entitled to
   cookies: Record<"admin" | "member" | "clientA" | "anon", string | null>;
 };
 
@@ -195,12 +197,22 @@ async function setup(): Promise<Fixture> {
     .values({ itemId: reviewItemB!.id, versionNo: 1, fileId: fileB!.id, status: "ready" })
     .returning();
 
-  // Academy fixture: a published course for lesson-create probes.
-  const { courses } = await import("../lib/db/schema");
+  // Academy fixture: a published course for lesson-create probes, plus two
+  // paid DIY courses — clientA is entitled to exactly one of them.
+  const { courses, courseEntitlements } = await import("../lib/db/schema");
   const [course] = await db
     .insert(courses)
     .values({ title: `Matrix course ${tag}`, status: "published" })
     .returning();
+  const [paidEntitled] = await db
+    .insert(courses)
+    .values({ title: `Matrix DIY entitled ${tag}`, status: "published", access: "paid" })
+    .returning();
+  const [paidLocked] = await db
+    .insert(courses)
+    .values({ title: `Matrix DIY locked ${tag}`, status: "published", access: "paid" })
+    .returning();
+  await db.insert(courseEntitlements).values({ courseId: paidEntitled!.id, userId: clientAId });
 
   return {
     accountA: a!.id,
@@ -223,6 +235,8 @@ async function setup(): Promise<Fixture> {
     intakeTokenB,
     reviewVersionB: reviewVersionB!.id,
     courseId: course!.id,
+    paidCourseEntitled: paidEntitled!.id,
+    paidCourseLocked: paidLocked!.id,
     cookies: {
       admin: await mintSession(adminId),
       member: await mintSession(memberId),
@@ -775,6 +789,59 @@ const CASES: Case[] = [
     path: () => "/api/slack/commands",
     body: () => ({}),
     expect: { admin: 501, member: 501, clientA: 501, anon: 501 },
+  },
+  // ===== Password auth + paid DIY (hardening + db/008) =====
+  {
+    // public endpoint, identical 401 for unknown email / wrong password
+    name: "POST password login with bad creds → 401 for everyone",
+    method: "POST",
+    path: () => "/api/auth/password-login",
+    body: () => ({ email: "nobody@example.com", password: "definitely-wrong" }),
+    expect: { admin: 401, member: 401, clientA: 401, anon: 401 },
+  },
+  {
+    name: "POST set password (signed-in only)",
+    method: "POST",
+    path: () => "/api/auth/password",
+    body: () => ({ password: "matrix-probe-pass-1" }),
+    expect: { admin: 200, member: 200, clientA: 200, anon: ANON },
+  },
+  {
+    name: "GET /api/learn (any signed-in user)",
+    method: "GET",
+    path: () => "/api/learn",
+    expect: { admin: 200, member: 200, clientA: 200, anon: ANON },
+  },
+  {
+    name: "GET entitled paid course (clientA may see)",
+    method: "GET",
+    path: (f) => `/api/courses/${f.paidCourseEntitled}`,
+    expect: { admin: 200, member: 200, clientA: 200, anon: ANON },
+  },
+  {
+    name: "GET locked paid course (clientA: not found)",
+    method: "GET",
+    path: (f) => `/api/courses/${f.paidCourseLocked}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET internal course detail (client refused even with DIY access)",
+    method: "GET",
+    path: (f) => `/api/courses/${f.courseId}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST grant entitlement (internal only)",
+    method: "POST",
+    path: () => "/api/academy/entitlements",
+    body: (f) => ({ courseId: f.paidCourseLocked, email: `matrix-diy-${Date.now()}@example.com` }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET entitlements list (internal only)",
+    method: "GET",
+    path: (f) => `/api/academy/entitlements?course=${f.paidCourseEntitled}`,
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
   },
 ];
 

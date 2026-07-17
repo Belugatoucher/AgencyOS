@@ -74,7 +74,7 @@ async function main() {
   }
 
   // ---- 2. Course + lessons + quiz + matrix ----
-  const course = await createCourse(viewer, { title: "Agency Onboarding (verify)", required: true, audienceRoles: ["member"], position: 0 });
+  const course = await createCourse(viewer, { title: "Agency Onboarding (verify)", required: true, audienceRoles: ["member"], position: 0, access: "internal" });
   check("course: created", course.ok);
   const courseId = course.ok ? course.value.id : "";
   await publishCourse(viewer, courseId);
