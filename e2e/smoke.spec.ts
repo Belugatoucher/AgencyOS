@@ -41,9 +41,11 @@ test("admin can run the whole week-1 path", async ({ page }) => {
   await expect(page.getByText("Check your email")).toBeVisible();
 
   await page.goto(await readMagicLink());
-  await expect(page).toHaveURL(/\/accounts/);
+  // internal users now land on My Tasks (docs/04); navigate to accounts
+  await expect(page).toHaveURL(/\/(tasks|accounts)/);
 
   // --- create an account
+  await page.goto("/accounts");
   const accountName = `E2E Agency ${run}`;
   await page.getByTestId("new-account-name").fill(accountName);
   await page.getByRole("button", { name: "Create account" }).click();

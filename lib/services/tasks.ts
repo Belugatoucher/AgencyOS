@@ -220,6 +220,12 @@ export async function updateTask(
     }
   }
 
+  // Nothing actually changed (e.g. status set to its current value) — return
+  // the task as-is rather than letting Drizzle throw "No values to set".
+  if (Object.keys(patch).length === 0) {
+    return ok({ task: existing });
+  }
+
   const [row] = await db.update(tasks).set(patch).where(eq(tasks.id, id)).returning();
   // Notify on (re)assignment to someone other than the actor.
   if (

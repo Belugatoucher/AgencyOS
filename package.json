@@ -13,6 +13,7 @@
     "worker": "tsx workers/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:matrix": "tsx tests/route-matrix.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
