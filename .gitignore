@@ -1,0 +1,34 @@
+# deps / build
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# env & secrets — never commit real env files
+.env
+.env.*
+!.env.example
+
+# runtime
+*.log
+.DS_Store
+uploads/
+tmp/
+
+# docker / db
+postgres-data/
+redis-data/
+*.dump
+
+# tooling
+.vscode/
+.idea/
+coverage/
+playwright-report/
+test-results/
+
+# whisper / models
+models/
+*.bin
+*.gguf
