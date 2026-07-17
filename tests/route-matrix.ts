@@ -8,6 +8,7 @@ import {
   assets,
   files,
   leads,
+  meetings,
   memberships,
   pipelines,
   reviewItems,
@@ -43,6 +44,7 @@ type Fixture = {
   assetB: string; // asset in B
   reviewItemB: string; // review item in B
   shareToken: string; // public share link to reviewItemB (no PIN)
+  meetingB: string; // meeting in B
   cookies: Record<"admin" | "member" | "clientA" | "anon", string | null>;
 };
 
@@ -123,6 +125,12 @@ async function setup(): Promise<Fixture> {
     expiresAt: new Date(Date.now() + 60 * 60 * 1000),
   });
 
+  // A meeting in account B — Notes are internal-only.
+  const [meetingB] = await db
+    .insert(meetings)
+    .values({ accountId: b!.id, title: "B standup", occurredAt: new Date() })
+    .returning();
+
   return {
     accountA: a!.id,
     accountB: b!.id,
@@ -134,6 +142,7 @@ async function setup(): Promise<Fixture> {
     assetB: assetB!.id,
     reviewItemB: reviewItemB!.id,
     shareToken,
+    meetingB: meetingB!.id,
     cookies: {
       admin: await mintSession(adminId),
       member: await mintSession(memberId),
@@ -356,6 +365,40 @@ const CASES: Case[] = [
     method: "GET",
     path: () => `/api/share/definitelynotarealtokenxxxxxxxx`,
     expect: { admin: 404, member: 404, clientA: 404, anon: 404 },
+  },
+  // ===== Notes (internal-only; portal exposure deferred to doc 11) =====
+  {
+    name: "GET /api/meetings (internal only)",
+    method: "GET",
+    path: () => "/api/meetings",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST meeting (clients cannot create)",
+    method: "POST",
+    path: (f) => "/api/meetings",
+    body: (f) => ({ title: "probe", accountId: f.accountA }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET meeting in B (client of A refused)",
+    method: "GET",
+    path: (f) => `/api/meetings/${f.meetingB}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST tasks-from-action-items on B meeting (client refused)",
+    method: "POST",
+    path: (f) => `/api/meetings/${f.meetingB}/tasks`,
+    body: () => ({ indexes: [0] }),
+    // admin/member reach the service (no notes yet → 400 invalid); client 404
+    expect: { admin: 400, member: 400, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET /api/meetings/search (internal only)",
+    method: "GET",
+    path: () => "/api/meetings/search?q=budget",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
   },
 ];
 
