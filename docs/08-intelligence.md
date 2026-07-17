@@ -67,10 +67,10 @@ POST   /api/brain/:accountId/brief
 
 ## Build checklist
 
-- [ ] pgvector + embedding worker (local bge-small)
-- [ ] Hooks CRUD + import + PWA share target + semantic search
-- [ ] Creatives + CSV metrics import + winning computation
-- [ ] Research upload → chunk → embed pipeline
-- [ ] Client Brain editor + versioning + suggestion queue
-- [ ] Ask the Brain chat (streaming, tool-use retrieval, citations)
-- [ ] Composer + brief integrations
+- [x] pgvector + embedding worker (local bge-small) — pluggable embedder: hash-mode default for dev/CI (real cosine ordering, no model download), `EMBED_MODE=local` runs bge-small via scripts/embed.py in the worker image
+- [x] Hooks CRUD + import + PWA share target + semantic search — CRUD + CSV import + pgvector search ship now; PWA share-target lands with the PWA shell (doc 13)
+- [x] Creatives + CSV metrics import + winning computation — metrics import lives in docs/09's pipeline (`/api/metrics/*`), rollup feeds `creatives.metrics` + top-quartile `is_winning`
+- [x] Research upload → chunk → embed pipeline — paste path + `embed-research` ai job; file upload/extraction follows with uploads
+- [x] Client Brain editor + versioning + suggestion queue — every write snapshots to brain_versions; suggestions from creatives + meeting decisions, human accept/reject only
+- [x] Ask the Brain chat (streaming, tool-use retrieval, citations) — tool loop with read-only Zod-gated tools + retrieval-ID audit trail (audit item 8); non-streaming v1, streaming is a UI upgrade
+- [ ] Composer + brief integrations — `/brief` route ships; "send to composer" wiring is post-MVP

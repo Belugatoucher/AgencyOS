@@ -36,3 +36,4 @@ test-results/
 models/
 *.bin
 *.gguf
+dump.rdb

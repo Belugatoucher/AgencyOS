@@ -6,10 +6,14 @@ import { randomBytes } from "node:crypto";
 import {
   accounts,
   assets,
+  brainSuggestions,
+  creatives,
   files,
   leads,
   meetings,
   memberships,
+  metricRows,
+  metricSources,
   pipelines,
   posts,
   reviewItems,
@@ -47,6 +51,10 @@ type Fixture = {
   shareToken: string; // public share link to reviewItemB (no PIN)
   meetingB: string; // meeting in B
   postB: string; // post in B
+  creativeB: string; // creative in B (Intelligence)
+  suggestionB: string; // pending brain suggestion in B
+  metricSourceB: string; // csv metric source in B
+  metricRowB: string; // unmatched ad metric row in B
   cookies: Record<"admin" | "member" | "clientA" | "anon", string | null>;
 };
 
@@ -139,6 +147,30 @@ async function setup(): Promise<Fixture> {
     .values({ accountId: b!.id, channels: ["linkedin"], body: "B post", status: "draft" })
     .returning();
 
+  // Intelligence + Metrics fixtures in B (all internal-only surfaces).
+  const [creativeB] = await db
+    .insert(creatives)
+    .values({ accountId: b!.id, platform: "meta", metrics: { roas: 2 }, spendCents: 20_000 })
+    .returning();
+  const [suggestionB] = await db
+    .insert(brainSuggestions)
+    .values({ accountId: b!.id, field: "learnings", proposed: { text: "matrix probe" }, source: "manual" })
+    .returning();
+  const [metricSourceB] = await db
+    .insert(metricSources)
+    .values({ accountId: b!.id, kind: "csv", config: {} })
+    .returning();
+  const [metricRowB] = await db
+    .insert(metricRows)
+    .values({
+      sourceId: metricSourceB!.id,
+      externalId: `matrix-${tag}`,
+      entityKind: "ad",
+      date: "2026-07-01",
+      metrics: { spend: 10 },
+    })
+    .returning();
+
   return {
     accountA: a!.id,
     accountB: b!.id,
@@ -152,6 +184,10 @@ async function setup(): Promise<Fixture> {
     shareToken,
     meetingB: meetingB!.id,
     postB: postB!.id,
+    creativeB: creativeB!.id,
+    suggestionB: suggestionB!.id,
+    metricSourceB: metricSourceB!.id,
+    metricRowB: metricRowB!.id,
     cookies: {
       admin: await mintSession(adminId),
       member: await mintSession(memberId),
@@ -442,6 +478,119 @@ const CASES: Case[] = [
     path: () => "/api/content-slots",
     body: (f) => ({ accountId: f.accountA, rrule: "FREQ=WEEKLY;BYDAY=TU", channels: ["instagram"] }),
     expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  // ===== Intelligence (docs/08 — the whole layer is internal-only) =====
+  {
+    name: "GET /api/hooks (internal only)",
+    method: "GET",
+    path: () => "/api/hooks",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST hook (clients cannot create)",
+    method: "POST",
+    path: () => "/api/hooks",
+    body: () => ({ text: "matrix probe hook", format: "question" }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET /api/research (internal only)",
+    method: "GET",
+    path: () => "/api/research",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET research semantic search (internal only)",
+    method: "GET",
+    path: () => "/api/research/search?q=pricing",
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET creatives in B (internal only)",
+    method: "GET",
+    path: (f) => `/api/creatives?account=${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST creative in B (client refused)",
+    method: "POST",
+    path: () => "/api/creatives",
+    body: (f) => ({ accountId: f.accountB, platform: "meta" }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET Brain for B (internal only)",
+    method: "GET",
+    path: (f) => `/api/brain/${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "PATCH Brain for B (client refused)",
+    method: "PATCH",
+    path: (f) => `/api/brain/${f.accountB}`,
+    body: () => ({ offer: "matrix probe" }),
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET Brain suggestions for B (internal only)",
+    method: "GET",
+    path: (f) => `/api/brain/${f.accountB}/suggestions`,
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    // roles run in order: admin decides first (200), member hits 409 decided,
+    // client is refused before any state is read past the lookup
+    name: "POST decide Brain suggestion in B",
+    method: "POST",
+    path: (f) => `/api/brain/suggestions/${f.suggestionB}`,
+    body: () => ({ decision: "rejected" }),
+    expect: { admin: 200, member: 409, clientA: 403, anon: ANON },
+  },
+  {
+    // no ANTHROPIC_API_KEY in CI → internal roles reach the real call and fail
+    // loudly (500); what matters here is clients/anon never reach it
+    name: "POST Brain chat for B (client refused before the model call)",
+    method: "POST",
+    path: (f) => `/api/brain/${f.accountB}/chat`,
+    body: () => ({ message: "matrix probe" }),
+    expect: { admin: [200, 500], member: [200, 500], clientA: 403, anon: ANON },
+  },
+  // ===== Metrics (docs/09 — internal-only) =====
+  {
+    name: "GET metric sources in B (internal only)",
+    method: "GET",
+    path: (f) => `/api/metrics/sources?account=${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST metric source in B (client refused)",
+    method: "POST",
+    path: () => "/api/metrics/sources",
+    body: (f) => ({ accountId: f.accountB, kind: "csv" }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST CSV import to B source (client refused; idempotent for team)",
+    method: "POST",
+    path: (f) => `/api/metrics/sources/${f.metricSourceB}/import`,
+    body: () => ({
+      csv: "ad id,day,amount spent,ad name\nmx-1,2026-07-01,12.50,Matrix probe ad\n",
+      mapping: { externalId: "ad id", date: "day", name: "ad name", metrics: { spend: "amount spent" } },
+    }),
+    expect: { admin: 201, member: 201, clientA: 403, anon: ANON },
+  },
+  {
+    name: "GET unmatched rows in B (internal only)",
+    method: "GET",
+    path: (f) => `/api/metrics/unmatched?account=${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  {
+    name: "POST link metric row in B to creative (client refused)",
+    method: "POST",
+    path: (f) => `/api/metrics/rows/${f.metricRowB}/link`,
+    body: (f) => ({ creativeId: f.creativeB }),
+    expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
   },
 ];
 

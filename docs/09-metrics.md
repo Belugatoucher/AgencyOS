@@ -29,7 +29,7 @@ Nightly job aggregates `metric_rows` into `creatives.metrics` (period totals + r
 
 ## Build checklist
 
-- [ ] CSV importer + mapping UI + idempotent upsert
-- [ ] metric_rows schema + nightly rollup + is_winning compute
-- [ ] Ad↔creative matcher + unmatched digest
+- [x] CSV importer + mapping UI + idempotent upsert — mapping-driven import, saved per source, upsert on (source, external_id, date); mapping UI is the JSON body today, a column-picker UI follows
+- [x] metric_rows schema + nightly rollup + is_winning compute — db/007-metrics.sql; `metrics-rollup` cron (02:30) aggregates into creatives.metrics + recomputes winners
+- [x] Ad↔creative matcher + unmatched digest — id-slug in ad name + manual link route; fuzzy name fallback deferred (creatives carry no name field); `unmatched-spend-digest` cron Mon 09:00
 - [ ] Meta API adapter (v1.5 gate)

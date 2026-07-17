@@ -14,6 +14,30 @@ Format:
 
 ---
 
+## 2026-07-17 — Pluggable embedder: hash-mode default, bge-small behind EMBED_MODE=local
+**Context:** docs/08 names local bge-small (384-dim) for embeddings; dev/CI containers can't fetch the model, and retrieval ordering still needs real verification against pgvector.
+**Decision:** `lib/embeddings` is pluggable via `EMBED_MODE`: default `hash` produces deterministic normalized FNV-1a bag-of-words vectors (cosine similarity ≈ lexical overlap, so ordering is genuinely testable end-to-end); `local` shells to `scripts/embed.py` (bge-small-en-v1.5, installed in the worker image). Both are 384-dim, so switching modes needs a re-embed, not a schema change.
+**Alternatives considered:** hosted embeddings API — a network dependency and per-token cost for something a local model does; skipping retrieval verification in CI — leaves the pgvector rail untested.
+**Revisit if:** prod retrieval quality needs a bigger model (change dim → migration) or CI gets model-cache access.
+
+## 2026-07-17 — Ask the Brain: non-streaming v1, read-only Zod-gated tools, ai_threads audit trail
+**Context:** docs/08 wants streaming chat with tool-use retrieval; audit item 8 mandates read-only tools, output gating, and traceability. prompts/client-brain.md names claude-sonnet-4-6 + temps.
+**Decision:** `brain-chat.ts` runs a bounded tool loop (8 rounds) with exactly four read-only tools (search_hooks/search_research/search_creatives/get_brain) whose inputs are Zod-parsed before touching services and which run under the human viewer's access scope; every thread persists messages + retrieval IDs to ai_threads. Cross-client anonymization is structural: retrieval scope is this-account + global-library only, so other clients' rows are never fetched. Non-streaming responses in v1 (the UI shows a full reply); model via `BRAIN_CHAT_MODEL` (default current Sonnet), sampling params omitted per the existing lead-scoring decision. Prompt text used verbatim.
+**Alternatives considered:** streaming SSE now — pure UI plumbing that doesn't change the safety or retrieval story; letting tools write (e.g. save-hook) — flatly barred by audit item 8.
+**Revisit if:** chat latency hurts (add streaming) or the handbook (doc 16) joins retrieval scope (needs the scope-wall rules from docs/08 applied to a second corpus).
+
+## 2026-07-17 — Metrics: db/007-metrics.sql + id-slug ad↔creative matching (no fuzzy fallback yet)
+**Context:** docs/09 defines the metric_sources/metric_rows model but the spec pack shipped no SQL file for it (schema is law → the SQL must exist). Matching wants ad-name convention first, "fuzzy name match as fallback" — but creatives have no name column to fuzz against.
+**Decision:** Added `db/007-metrics.sql` (+ Drizzle + migration) with the idempotency key `unique(source_id, external_id, date)`. Matching: full UUID or ≥8-hex-char id-prefix slug in the ad name (SOP), manual link route for stragglers, weekly `unmatched-spend-digest` so unmatched spend never rots silently. "Top quartile" is defined as the best ceil(n/4) eligible creatives (min-spend floor $100 default), ties at the cutoff count.
+**Alternatives considered:** fuzzing against creative learnings — matching ad names to prose is noise; a creatives.name column — schema addition the specs didn't ask for, revisit when naming SOP exists.
+**Revisit if:** the Meta adapter (v1.5) lands with real ad names — then add a name column + trigram matching, or account settings define per-account KPI/min-spend (today: defaults + env).
+
+## 2026-07-17 — E2E must run against the production build (CSP blocks dev-mode eval)
+**Context:** The audit header policy (`script-src 'self' 'unsafe-inline'`, no `unsafe-eval`) kills Next dev-mode hydration (webpack eval sourcemaps), so browser tests against `pnpm dev` silently see a dead page.
+**Decision:** Playwright config already builds+starts prod (`pnpm start`); documented here because the failure mode is subtle — controlled inputs accept text at the DOM level but React never registers it. Do not weaken CSP for dev; run e2e against the build.
+**Alternatives considered:** conditional CSP in dev — drifts from the audited posture the tests are supposed to exercise.
+**Revisit if:** Next ships dev sourcemaps that don't need eval.
+
 ## 2026-07-17 — Scheduler publishes manual-first; GHL is a pluggable adapter behind creds
 **Context:** docs/06 publishes through GHL's Social Planner, but GHL is deferred until we have it (same posture as the Leads GHL connector). The planning/approval brain must be fully usable now.
 **Decision:** `lib/scheduler/publish.ts` defines a `PublishAdapter` interface. The default `manualAdapter` marks a due post `published` (the team posts by hand; the calendar is the plan-of-record) — manual-first, like Leads. `PUBLISH_MODE=ghl` + GHL creds swap in the `ghlAdapter` (the single rewrite point per the doc; currently a stub that errors clearly). A `cron` `publish-sweep` every 2 min enqueues `publish-post` jobs for due `scheduled` posts; failures flip status to `failed` and page Slack.

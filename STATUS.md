@@ -1,40 +1,42 @@
-# STATUS — through Week 7: Scheduler
+# STATUS — through Weeks 8-9: Intelligence + Metrics
 
 _Last session: 2026-07-17. Read this first next session (HANDOFF.md rule)._
 
-## Week 7 — Scheduler (docs/06) — COMPLETE (manual-first; GHL adapter deferred)
-Plan, draft, approve, and publish social content per client from one calendar.
+## Weeks 8-9 — Intelligence (docs/08) + Metrics (docs/09) — COMPLETE (MVP scope; see checklists)
+The RAG rail is live: pgvector + embeddings + retrieval, the per-client Brain, and the metrics pipeline that feeds winning-creative computation.
 
-- **Calendar** — month grid per-account and an all-accounts master view; posts colored by status; ghost cards render each content slot's owed occurrences that have no post that day.
-- **Composer** — channel multi-select, default body + per-channel overrides, media picker from the account's asset library (records `asset_usage`), scheduled time, approval toggle, live per-channel validation issues (IG/TikTok media-required, caption limits, body caps — checked at draft, not publish).
-- **Approval** — `approval_required` gates the `scheduled` transition (hard stop, no approval → no publish); approvers are internal or a client member of the account (the portal reuses the same route).
-- **Publish** — pluggable adapter: **manual-first default** marks a due post published (team posts by hand, calendar is the plan-of-record); `PUBLISH_MODE=ghl` + GHL creds swap in the GHL Social Planner adapter (deferred, the single rewrite point). A `cron` `publish-sweep` (every 2 min) enqueues `publish-post` jobs for due posts; failures flip to `failed` and page Slack.
-- **AI drafting** — "Draft with AI" runs `prompts/content-repurpose.md` verbatim against a source (transcript/blog/bullets), Zod-gated, pre-fills per-channel overrides; a human always reviews.
-- **Content slots** — recurring RRULE slots per account drive the ghost cards.
+- **Embeddings** — `lib/embeddings`: pluggable via `EMBED_MODE` — `hash` default (deterministic 384-dim, cosine ≈ lexical overlap, so retrieval ordering is real and testable in dev/CI); `local` runs bge-small via `scripts/embed.py` (installed in the worker image). Migration 0006 creates the `vector` extension + hnsw cosine indexes; compose now uses `pgvector/pgvector:pg16`.
+- **Hooks** — global + per-account library; create embeds inline, CSV import (`text,format,platform,niche_tags,source_url`), search = filters + semantic ranking via pgvector `<=>`. PWA share-target lands with the PWA shell (doc 13).
+- **Research** — paste → doc row → `embed-research` ai job chunks (1200/150 overlap) + embeds → `research_chunks`; status processing→ready|failed. Semantic search over chunks scoped to this-account + global.
+- **Creatives** — performance log; a written learning auto-proposes a Brain suggestion; nightly rollup writes period totals + rates into `creatives.metrics` and recomputes `is_winning` (top quartile = best ceil(n/4) on the primary KPI, min-spend floor $100 default).
+- **Client Brain** — editor (offer/ICP/positioning/voice/objections/proof points/compliance no-gos/goals); every write snapshots to `brain_versions` and bumps `version`. Suggestion queue: creatives' learnings + meeting decisions (applyNotes bridge) propose; humans accept/reject; the Brain never self-edits.
+- **Ask the Brain** — tool loop (audit item 8): four read-only Zod-gated tools (search_hooks/search_research/search_creatives/get_brain) under the viewer's access scope; retrieval scope is structurally this-account + global (cross-client rows never fetched); every thread stores messages + retrieval IDs in `ai_threads`. `/brief` reuses the loop. Non-streaming v1; prompt from `prompts/client-brain.md` verbatim; `BRAIN_CHAT_MODEL` (default current Sonnet).
+- **Metrics** — `db/007-metrics.sql` (new; pack had no SQL for docs/09): `metric_sources` (saved column mappings) + `metric_rows` with `unique(source_id, external_id, date)` → idempotent CSV re-imports. Ad↔creative matching by id-slug in ad name (full uuid or ≥8-hex prefix), manual link route for stragglers, `unmatched-spend-digest` cron (Mon 09:00) pages unmatched spend. `metrics-rollup` cron (02:30 nightly).
 
-Routes: `GET/POST /api/posts`, `GET/PATCH /api/posts/:id`, `POST /api/posts/:id/approval`, `POST /api/posts/:id/ai-draft`, `GET/POST /api/content-slots`, `GET /api/content-slots/ghosts`. Nav: Calendar tab.
+Routes: `GET/POST /api/hooks` (+`/import`), `GET/POST /api/research` (+`/search`), `GET/POST /api/creatives`, `GET/PATCH /api/brain/:accountId` (+`/suggestions`, `/chat`, `/brief`), `POST /api/brain/suggestions/:id`, `GET/POST /api/metrics/sources` (+`/:id/import`), `GET /api/metrics/unmatched`, `POST /api/metrics/rows/:id/link`. Nav: Intelligence tab (internal only — the whole layer is invisible to clients).
 
-## Verified this session (real Postgres + Redis)
-- Unit: **46 pass** (+6 channel validation). E2e: **8 pass** (+scheduler composer). Route-matrix: **164/164** (+20 post/slot cases: account-scoped, client of A 404 cross-account / 403 create, anon 401).
-- Full flow by curl: IG-no-media flagged; scheduling blocked while issues exist; approval gate (request → approve → schedule); ghost cards (6 TU/TH occurrences over 3 weeks). **Publish proven end-to-end:** the sweep found the due `scheduled` post and the manual adapter marked it `published` (job_runs ok) — no GHL needed in manual mode.
-- AI drafting wiring is identical to lead-scoring/notes (fails loudly without `ANTHROPIC_API_KEY`).
+## Verified this session (real Postgres + pgvector + Redis)
+- Unit: **60 pass** (+14: embedder determinism/ranking/chunking, slug matching, aggregation, quartile winners). E2e: **9 pass** (+intelligence: hooks add/semantic search, research paste, creative log → Brain suggestion → accept → version bump). Route-matrix: **228/228** (+64: all Intelligence/Metrics routes — internal-only 403 for clients, anon 401, suggestion decide-once 409).
+- `scripts/verify-intelligence.ts` (23 checks, all pass, run against the live worker): research doc embedded by the real `embed-research` job → chunks with 384-dim embeddings → **pgvector retrieval ranks the right chunk first**; hooks semantic ordering; creative learning → suggestion → accept applies learning + versions the Brain; meeting-decision bridge; CSV import matched the slug-named ad, re-import stayed idempotent (3 rows, no dupes), rollup computed spend 200.50 / ROAS 3.09 and flagged the winner.
+- Brain chat wiring fails loudly without `ANTHROPIC_API_KEY` (same posture as scoring/notes); auth ordering proven by matrix (clients 403 before any model call).
+- Gotcha (now in decisions log): e2e must run against `pnpm build && pnpm start` — the audit CSP (no `unsafe-eval`) kills Next dev-mode hydration.
 
 ## How to run (unchanged, plus)
 ```bash
-pnpm test          # 46 unit
-pnpm test:matrix   # 164-check route matrix (needs running app + DB)
-pnpm build && pnpm test:e2e   # 8 playwright specs
-pnpm worker        # media, transcribe, ai (score-lead, meeting-notes), publish (publish-post), cron (…, publish-sweep)
+pnpm test          # 60 unit
+pnpm test:matrix   # 228-check route matrix (needs running app + DB)
+pnpm build && pnpm test:e2e   # 9 playwright specs
+pnpm worker        # + ai: embed-research · cron: metrics-rollup, unmatched-spend-digest
+pnpm tsx scripts/verify-intelligence.ts   # 23-check live pipeline verification
 ```
-Publishing works today in manual mode. Set `PUBLISH_MODE=ghl` + `GHL_*` creds once GHL exists (adapter stub is in `lib/scheduler/publish.ts`).
+Postgres needs pgvector (compose image is `pgvector/pgvector:pg16`; bare metal: `postgresql-16-pgvector`). `EMBED_MODE=local` in prod for real embeddings (worker image has sentence-transformers).
 
-## Next (Weeks 8-9 — Intelligence + Metrics, docs/08 + docs/09)
-This introduces the RAG rail. Intelligence needs **pgvector + an embedding worker** (new infra — add the pgvector extension + a `media`-style embed job), the hooks DB (PWA share-target capture), a research pipeline, the per-client **Brain** (RAG with **read-only tools only** — audit item 8), and Ask-the-Brain chat with retrieval + citations (scope walls: client Brain ↔ handbook, cross-client anonymization). Metrics (docs/09): CSV importer + rollups + `is_winning` compute feeding Intelligence. Tables are in `db/002-intelligence.sql`. The `ai` queue, the Zod-gated extraction pattern, and the manual-first adapter posture are the templates.
+## Next (Week 10 — Client Portal, docs/11)
+The portal exposes client-facing surfaces over the rails that already enforce `client_visible` + membership scoping server-side: review approvals, post approvals, visible tasks, shared assets, and (per `org_settings`/`portal_leads`) lead summaries. The route-matrix already proves the isolation the portal relies on; portal work is mostly pages + navigation for the `client` role, which currently gets redirected to /accounts.
 
 ## Carrying forward / needs Ryan
-- **AI features need `ANTHROPIC_API_KEY`**: lead scoring, meeting notes, content drafting. Transcription needs whisper/pyannote (worker image) + `HF_TOKEN`. Publishing needs GHL only when you leave manual mode.
-- Media + transcription verified for wiring only in this env (no full ffmpeg/whisper, no real R2). First deploy: transcode a clip, transcribe a clip, publish a post.
-- Scheduler week view + GHL publish adapter are the remaining Scheduler post-MVP items.
-- Portal (doc 11, wk10) exposes client-facing views; `client_visible` honored server-side across all modules; post approval already accepts a client member.
-- Route-matrix hand-extended per new route (automation still TODO). Now 164 checks.
+- **AI features need `ANTHROPIC_API_KEY`**: lead scoring, meeting notes, content drafting, **Ask the Brain**. Transcription needs whisper/pyannote + `HF_TOKEN`. Publishing needs GHL only when leaving manual mode.
+- Media + transcription verified for wiring only in this env (no full ffmpeg/whisper, no real R2). Embeddings/retrieval ARE verified for real (hash mode vs live pgvector); first deploy with `EMBED_MODE=local` should re-embed and spot-check retrieval quality.
+- Deferred: PWA share-target (doc 13), Brain-chat streaming + send-to-composer, research file upload/extraction, metrics column-picker UI, Meta API adapter (v1.5), per-account KPI/min-spend settings.
+- Route-matrix hand-extended per new route (automation still TODO). Now 228 checks.
 - Standing deploy needs: SMTP_URL, R2 creds + CORS, AUTH_SECRET, APP_ENCRYPTION_KEY, ANTHROPIC_API_KEY, HF_TOKEN; GHL_* when leaving manual publish.
