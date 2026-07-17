@@ -14,6 +14,24 @@ Format:
 
 ---
 
+## 2026-07-17 — Shared media rail: ffmpeg wrappers + FFMPEG_PATH, worker installs ffmpeg
+**Context:** Weeks 4 (asset thumbnails) and 5 (HLS transcode + sprite sheets) both need ffmpeg. The app image must not carry it (rule 5: the app never touches bytes).
+**Decision:** `lib/media/ffmpeg.ts` wraps a full ffmpeg (image/video thumbnail, sprite sheet, HLS ladder) with a hard timeout; `FFMPEG_PATH`/`FFPROBE_PATH` env overrides the binary. `Dockerfile.worker` apt-installs ffmpeg; the app image does not. `lib/media/jobs.ts` runs only in the worker: pull source from R2 → process in a temp dir → push derived objects → update the DB row. Media jobs are `media`-queue jobs with retries and `job_runs`.
+**Alternatives considered:** a Node image library (sharp) for thumbnails — still need ffmpeg for video/HLS, so one tool covers both; running ffmpeg in the app — violates the no-bytes-in-app rule and blocks the request path.
+**Revisit if:** GPU transcode is needed at volume (docs/00 notes a GPU box upgrade path).
+
+## 2026-07-17 — This environment's ffmpeg is minimal; media verified for wiring only
+**Context:** The only ffmpeg available in this build environment is the Playwright-bundled one (image2 demux only — no h264/mjpeg/aac encoders, no lavfi/hls), and there is no real R2 (an S3 stub that stores nothing stands in).
+**Decision:** The ffmpeg wrapper tests are capability-gated (skip encode/transcode assertions when only a minimal ffmpeg is present; `mediaKind` always runs). End-to-end media processing was verified for *wiring*: both `asset-thumbnail` and `review-transcode` jobs execute, pull from the R2 stub, and reach the real ffmpeg invocation (failing loudly into `job_runs` on the minimal encoder). Real thumbnails/HLS require the full ffmpeg the worker image installs + real R2.
+**Alternatives considered:** shipping a bundled ffmpeg binary — large and platform-specific; the Docker image is the right place.
+**Revisit if:** CI gains a full ffmpeg — then the wrapper tests exercise real encode/transcode and an integration test can round-trip against MinIO.
+
+## 2026-07-17 — Review actor model: authenticated user OR share-link guest
+**Context:** docs/01 comment/approval routes accept "auth or valid share token". Guests have no session.
+**Decision:** An `Actor` is `{type:"user"}` or `{type:"guest", shareLinkId, guestName, itemId, canComment}`. `resolveActor` prefers a signed-in user, else resolves a share token (unexpired, targeting the version's item). Comment/approval routes are plain handlers (not `withViewer`) that resolve the actor from the session or the request body's `shareToken`+`guestName`. Share PIN attempts are rate-limited 5/15min per token+IP with lockout + owner notification; the public payload mints ≤15-min signed R2 URLs per request (audit item 1) — revoking a link expires it so signed URLs die naturally.
+**Alternatives considered:** a separate guest-comment endpoint — duplicates logic; the spec wants one route.
+**Revisit if:** guests should get their own rate limits on comment volume (add a per-token comment cap).
+
 ## 2026-07-17 — Leads are internal-only in Week 3; portal leads page deferred
 **Context:** docs/02 describes an optional per-account client portal leads page (`portal_leads: off|summary|full`), but the roadmap puts the whole client portal in Week 10 (doc 11).
 **Decision:** All pipeline/stage/lead routes and services are internal-only (admin/member). Clients get 403; the route-matrix proves it. `accounts.portal_leads` and `leads.client_hidden` columns exist and are respected in writes, but no client-facing read path is wired yet.

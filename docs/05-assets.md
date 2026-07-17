@@ -41,9 +41,9 @@ GET    /api/assets/:id/usage
 
 ## Build checklist
 
-- [ ] Schema + upload (reuses Review's file service)
-- [ ] Grid browser with filters + thumbnails
-- [ ] Collections + share links + client drop-box
-- [ ] Brand Kit panel component (consumed by Scheduler + Review)
-- [ ] Rights expiry job
-- [ ] Usage backlinks
+- [x] Schema + upload (reuses Review's file service)
+- [x] Grid browser with filters + thumbnails
+- [x] Collections + share links + client drop-box
+- [x] Brand Kit panel component (consumed by Scheduler + Review) — collection with `is_brand_kit`; the shared side-panel is wired when Scheduler (wk7) lands
+- [x] Rights expiry job
+- [x] Usage backlinks

@@ -52,9 +52,9 @@ GET    /r/:token                             public review page (PIN-gated)
 
 ## Build checklist
 
-- [ ] Schema + R2 presigned upload service (shared with Assets module)
-- [ ] ffmpeg worker: HLS, thumbnail, sprite sheet
-- [ ] Player page: hls.js, comment rail, timestamp anchoring, drawing overlay
-- [ ] Share link mint + public route + PIN gate
-- [ ] Approvals + notifications
+- [x] Schema + R2 presigned upload service (shared with Assets module)
+- [x] ffmpeg worker: HLS, thumbnail, sprite sheet
+- [x] Player page: comment rail, timestamp anchoring — MVP plays the source directly; hls.js attaches to `hlsUrl` when transcoded. Drawing-overlay capture is post-MVP (schema `drawing` column ready)
+- [x] Share link mint + public route + PIN gate
+- [x] Approvals + notifications
 - [ ] Version compare (post-MVP)

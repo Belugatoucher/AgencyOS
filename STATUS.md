@@ -1,40 +1,46 @@
-# STATUS — through Week 3: Leads
+# STATUS — through Week 5: Assets + Review
 
 _Last session: 2026-07-17. Read this first next session (HANDOFF.md rule)._
 
-## Week 3 — Leads (manual-first, docs/02) — COMPLETE (roadmap scope)
+## Week 4 — Assets (docs/05) — COMPLETE
+- **Schema** — assets/collections/collection_assets/asset_usage in Drizzle (migration 0003).
+- **Grid browser** — account picker + type/status/search filters, upload→register (shared `lib/upload-client`), inline status, type/mime placeholder thumbnails (real thumbs render from `thumb_key` when the media worker runs).
+- **Dedup** — checksum match in the same account returns `duplicateOf` and the UI warns.
+- **Assignment** — assigning a draft asset spawns an auto-task (`source=asset`) in the assignee's My Tasks.
+- **Collections + Brand Kit + drop-box + share links** — collections with `is_brand_kit`/`is_dropbox`; share links reuse the signed-link service (≥128-bit token, PIN, expiry).
+- **Rights expiry** — weekly `cron` job flags assets expiring in 30 days and expired-but-still-approved, notifies internal + Slack.
+- **Usage backlinks** — `asset_usage` rows + `GET /api/assets/:id/usage`.
 
-Roadmap Week 3 scope shipped; the two explicitly-deferred items (portal leads page → Week 10, GHL connector → when GHL exists) are left unchecked in docs/02 with reasons.
+## Week 5 — Review (docs/01) — COMPLETE (MVP; version-compare + drawing capture post-MVP)
+- **Items/versions** — items with `client_visible` scoping; a new upload = next version, enqueues a `review-transcode` media job.
+- **ffmpeg worker** — poster thumbnail + scrub sprite sheet + HLS ladder (720p/1080p) for video, poster for images; sets `thumb_key`/`sprite_key`/`hls_key` and marks the version ready|failed.
+- **Comments** — frame-anchored (`timestamp_ms` from `video.currentTime`), region for stills, one-level threading, resolve, click-to-seek. Change punch-list: `open/accepted/declined/done`, decline requires a reason (posted as a reply). "Changes → Tasks" spawns one task with a checklist item per open change.
+- **Approvals** — approve / request-changes; request-changes needs ≥1 change comment; can't approve with open changes unless "approve with exceptions" (logs the count). Fires notification + Slack.
+- **Share links + public page** — `POST /api/review/items/:id/share` mints a 14-day link (optional PIN); public `/r/:token` page with PIN gate (5/15min rate limit + lockout + owner notification), guest-name-once, comment + approve. Media served via ≤15-min signed R2 URLs minted per request; revoke expires the link so playback dies (audit item 1).
 
-- **Pipelines/stages** — CRUD, default stages seeded per pipeline (New → Contacted → Qualified → Proposal → Won / Lost); stage delete blocked while it holds leads. Pipelines always belong to an account (per db/006).
-- **Leads** — CRUD, inline editing, drag kanban + table toggle, drawer with timeline (notes + stage changes), owner/next-action/value/notes inline edits. Filters: pipeline/account/stage/owner + `no_next_action` shame list.
-- **CSV import** — dependency-free parser (7 unit tests), 5MB/5000-row caps, per-pipeline.
-- **Public intake endpoint** (`POST /api/intake/[token]`) — unauthenticated lead capture with audit-item-6 hardening: ≥128-bit tokens, per-IP rate limit (20/15min), honeypot (passes schema, drops silently at the service, 200 either way), strict Zod, 16KB body cap, identical responses for unknown tokens.
-- **All-accounts overview** — per-pipeline totals, open value, won-this-month, no-next-action counts; metrics strip.
-- **AI scoring** — `ai` queue job `score-lead`. Prompt loaded verbatim from `prompts/lead-scoring.md`; output Zod-validated with one retry then fails loudly; writes score + rationale and appends the JSON as a note activity. Human gates intact (never moves a stage). Model configurable via `LEAD_SCORING_MODEL` (default `claude-sonnet-5`).
-
-Routes: `GET/POST /api/pipelines`, `GET /api/pipelines/:id`, `POST /api/pipelines/:id/stages`, `DELETE …/stages/:id`, `POST …/intake`, `POST …/import`, `GET/POST /api/leads`, `GET/PATCH /api/leads/:id`, `POST /api/leads/:id/{move,notes,score}`, `GET /api/leads/overview`, `POST /api/intake/:token` (public). Nav: internal users get a Leads tab.
+Shared: `lib/media` (ffmpeg wrappers + jobs), `lib/upload-client` (presigned→R2→register), `components/review-player` (used by internal item page + public page).
 
 ## Verified this session (real Postgres + Redis)
-- Unit: **33 pass** (access 12, rrule 9, lead-scoring schema 5, lead-intake/CSV 7). E2e: **4 pass** (week-1, magic-link single-use, tasks, leads). Route-matrix: **84/84** (added 7 lead/pipeline cases × 4 roles proving client isolation).
-- Drove the full leads path via curl: pipeline create (6 stages seeded) → lead create/move/note → intake (valid 200, honeypot 200-dropped, bad-token 404) → CSV import (2 imported, blank row skipped) → overview totals.
-- AI scoring wiring verified end-to-end: enqueue → 202, worker runs, 3 BullMQ retries, fails loudly with a clear `job_runs` error (no ANTHROPIC_API_KEY in this env). Real scores need the key set.
+- Unit: **36 pass** (access 12, rrule 9, lead-scoring 5, lead-intake 7, ffmpeg 3). E2e: **6 pass** (week-1, magic-link, tasks, leads, assets, review-with-public-share). Route-matrix: **124/124** (+16 asset/review/share cases: client of A gets 404 cross-account; public share is session-agnostic — 200 valid token, 404 bad token).
+- Share PIN gate driven by curl: no-pin/wrong-pin → `pin_required`, correct → `ok`; 6 wrong attempts → `locked_out` (429). Guest change-comment via token → 201.
+- **Media rail proven end-to-end for wiring:** both `asset-thumbnail` and `review-transcode` jobs execute, pull from the R2 stub, and reach the real ffmpeg invocation, failing loudly into `job_runs`. Real thumbnails/HLS need the full ffmpeg the worker Docker image installs (this env's bundled ffmpeg is encoder-less) + real R2. See decisions log.
 
 ## How to run (unchanged, plus)
 ```bash
-pnpm test          # vitest: access, rrule, lead-scoring, lead-intake
-pnpm test:matrix   # 84-check route matrix (needs running app + DB)
-pnpm build && pnpm test:e2e   # 4 playwright specs (CHROMIUM_PATH=/opt/pw-browsers/chromium here)
-pnpm worker        # cron (recurring/digest) + ai (heartbeat, score-lead)
+pnpm test          # 36 unit (add FFMPEG_PATH=/path/to/full/ffmpeg to exercise encode tests)
+pnpm test:matrix   # 124-check route matrix (needs running app + DB)
+pnpm build && pnpm test:e2e   # 6 playwright specs (CHROMIUM_PATH=/opt/pw-browsers/chromium here)
+pnpm worker        # media (asset-thumbnail, review-transcode), ai (score-lead), cron (recurring/digest/rights-sweep)
 ```
-Set `ANTHROPIC_API_KEY` (+ optional `LEAD_SCORING_MODEL`, `AGENCY_SERVICES_BLURB`) to get real lead scores. Local infra: Postgres/Redis are reclaimed between idle periods in this container — restart with `pg_ctl … start` / `redis-server --daemonize yes` (scratchpad env.sh).
+Media processing needs a full ffmpeg (the worker image apt-installs it) + real R2. Locally, point `R2_ENDPOINT` at MinIO to round-trip real media.
 
-## Next (Week 4 — Assets, docs/05)
-- Asset grid, collections, Brand Kit, share links + PIN, thumbnails — this builds the **media worker** Review (Week 5) needs. The file service (Week 1) and the `media` queue rail already exist; Assets adds ffmpeg thumbnailing to the worker and the assets/collections tables.
-- Share links reuse the `share_links` table (already in db/schema.sql) with audit-item-1 hardening (short-lived signed R2 URLs, PIN rate limiting) — first real use of that table.
+## Next (Week 6 — Notes, docs/03)
+- Upload + in-person recorder, **whisper worker** (the `transcribe` queue rail exists; add faster-whisper to the worker image like ffmpeg), diarization, Claude meeting notes, action-items→Tasks bridge (the `tasks.source=meeting` column + the changes→task pattern from Review are the template), auto-linking to leads.
 
 ## Carrying forward / needs Ryan
-- GHL connector (doc 02 appendix) deferred until GHL exists; `lead_mode`, `sync_map`, `sync_log` columns are ready.
-- Portal leads page deferred to Week 10 (doc 11); `portal_leads` / `client_hidden` columns respected in writes but no client read path yet.
-- Route-matrix still extended by hand per new route (automation still TODO).
-- Real env for deploy: SMTP_URL, R2 creds + bucket CORS, AUTH_SECRET, APP_ENCRYPTION_KEY, ANTHROPIC_API_KEY. Turnstile keys present in .env.example but not yet wired to the intake form (honeypot + rate limit cover it for now).
+- Media verified for wiring only in this env (no full ffmpeg / no real R2). First real deploy should transcode a test clip and confirm HLS plays.
+- R2 bucket needs CORS (PUT from APP_URL, expose ETag) for browser uploads; the media worker needs R2 read+write creds.
+- Review drawing-overlay capture and version-compare are post-MVP (schema columns ready).
+- Portal (doc 11, wk10) will expose client-facing Review/Assets views; `client_visible`/`client_hidden` honored server-side already.
+- Route-matrix still hand-extended per new route (automation still TODO). Now 124 checks.
+- Standing deploy needs: SMTP_URL, R2 creds + CORS, AUTH_SECRET, APP_ENCRYPTION_KEY, ANTHROPIC_API_KEY.
