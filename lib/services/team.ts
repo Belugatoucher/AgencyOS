@@ -37,5 +37,11 @@ export async function inviteUser(
   if (existing) return err("conflict", "A user with that email already exists");
   const [row] = await db.insert(users).values(input).returning();
   await sendInviteEmail(input.email, input.name);
+  // Academy assignment rules fire on user creation (docs/16): "new editor
+  // joins → onboarding track auto-assigned".
+  if (input.role !== "client") {
+    const { applyAssignmentsForUser } = await import("@/lib/services/academy");
+    await applyAssignmentsForUser(row!.id, input.role);
+  }
   return ok(row!);
 }

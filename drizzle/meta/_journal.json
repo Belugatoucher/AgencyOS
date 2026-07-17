@@ -64,6 +64,13 @@
       "when": 1784323011199,
       "tag": "0008_thin_frightful_four",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784323974342,
+      "tag": "0009_late_loki",
+      "breakpoints": true
     }
   ]
 }

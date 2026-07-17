@@ -6,9 +6,12 @@ import { bullConnection, getQueue, QUEUE_NAMES, type QueueName } from "../lib/qu
 import { runDueRecurringRules } from "../lib/services/recurring";
 import { sendDailyDigests } from "../lib/services/digest";
 import { applyLeadScore, scoreLead } from "../lib/services/lead-scoring";
-import { processAssetThumbnail, processReviewVersion } from "../lib/media/jobs";
+import { processAssetThumbnail, processLessonMedia, processReviewVersion } from "../lib/media/jobs";
 import { flagExpiringAssets } from "../lib/services/asset-rights";
-import { transcribeMeeting } from "../lib/transcribe";
+import { transcribeLesson, transcribeMeeting } from "../lib/transcribe";
+import { embedSop, sopStalenessSweep } from "../lib/services/sops";
+import { embedLesson } from "../lib/services/academy";
+import { notebookGapReport } from "../lib/services/notebook";
 import { applyNotes, generateNotes } from "../lib/services/meeting-notes";
 import { enqueueDuePosts, publishPost } from "../lib/scheduler/publish";
 import { embedResearchDoc } from "../lib/services/research";
@@ -33,12 +36,22 @@ const processors: Record<QueueName, Record<string, Processor>> = {
       const { versionId } = job.data as { versionId: string };
       return processReviewVersion(versionId);
     },
+    // Lesson video: HLS via the same rail, then whisper (docs/16)
+    async "lesson-media"(job) {
+      const { lessonId } = job.data as { lessonId: string };
+      return processLessonMedia(lessonId);
+    },
   },
   transcribe: {
     // faster-whisper + pyannote → diarized segments, then enqueue notes (docs/03)
     async "transcribe-meeting"(job) {
       const { meetingId } = job.data as { meetingId: string };
       return transcribeMeeting(meetingId);
+    },
+    // Lesson transcript → kb embed (docs/16)
+    async "transcribe-lesson"(job) {
+      const { lessonId } = job.data as { lessonId: string };
+      return transcribeLesson(lessonId);
     },
   },
   ai: {
@@ -65,6 +78,16 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     async "embed-research"(job) {
       const { docId } = job.data as { docId: string };
       return embedResearchDoc(docId);
+    },
+    // Published SOP → heading-anchored kb chunks (docs/16)
+    async "embed-sop"(job) {
+      const { sopId } = job.data as { sopId: string };
+      return embedSop(sopId);
+    },
+    // Lesson transcript → timestamped kb chunks (docs/16)
+    async "embed-lesson"(job) {
+      const { lessonId } = job.data as { lessonId: string };
+      return embedLesson(lessonId);
     },
   },
   ghl: {},
@@ -104,6 +127,14 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     // Weekly client portal digest (docs/11)
     async "client-digest"() {
       return sendClientDigests();
+    },
+    // SOP staleness sweep (docs/16): overdue published SOPs → needs_review
+    async "sop-staleness-sweep"() {
+      return sopStalenessSweep();
+    },
+    // Weekly "SOPs we're missing" report from Notebook gaps (docs/16)
+    async "notebook-gap-report"() {
+      return notebookGapReport();
     },
   },
 };
@@ -199,6 +230,16 @@ async function registerSchedules() {
     "client-digest",
     {},
     { repeat: { pattern: "30 8 * * 5" }, jobId: "client-digest" }, // Fri 08:30 (docs/11 weekly)
+  );
+  await cron.add(
+    "sop-staleness-sweep",
+    {},
+    { repeat: { pattern: "0 6 * * *" }, jobId: "sop-staleness-sweep" }, // daily 06:00 (docs/16)
+  );
+  await cron.add(
+    "notebook-gap-report",
+    {},
+    { repeat: { pattern: "0 9 * * 3" }, jobId: "notebook-gap-report" }, // Wed 09:00 (docs/16 weekly)
   );
   console.log("[worker] cron schedules registered");
 }

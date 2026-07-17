@@ -6,6 +6,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -483,6 +484,101 @@ export const aiThreads = pgTable("ai_threads", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ===== Academy (db/004-academy.sql, docs/16) =====
+
+export const sops = pgTable("sops", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  category: text("category").notNull(), // client_mgmt|creative|media_buying|sales|ops|tools
+  tags: text("tags").array().notNull().default(sql`'{}'`),
+  body: text("body").notNull(), // markdown with heading anchors
+  ownerId: uuid("owner_id").references(() => users.id),
+  status: text("status").notNull().default("draft"), // draft|published|needs_review
+  reviewEveryDays: integer("review_every_days").notNull().default(180),
+  lastReviewedAt: timestamp("last_reviewed_at", { withTimezone: true }),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const sopVersions = pgTable("sop_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sopId: uuid("sop_id").notNull().references(() => sops.id),
+  version: integer("version").notNull(),
+  snapshot: jsonb("snapshot").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Internal knowledge chunks (SOPs + lesson transcripts). SEPARATE scope from
+// client research by construction (docs/16 boundary rule): the Notebook only
+// reads kb_chunks; Ask the Brain never touches this table.
+export const kbChunks = pgTable("kb_chunks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  source: text("source").notNull(), // sop|lesson
+  sourceId: uuid("source_id").notNull(),
+  anchor: text("anchor"), // sop heading slug
+  startMs: integer("start_ms"), // lesson transcript position
+  chunkText: text("chunk_text").notNull(),
+  embedding: vector("embedding", { dimensions: 384 }),
+});
+
+export const courses = pgTable("courses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  description: text("description"),
+  audienceRoles: text("audience_roles").array().notNull().default(sql`'{}'`),
+  required: boolean("required").notNull().default(false),
+  position: integer("position").notNull().default(0),
+  status: text("status").notNull().default("draft"), // draft|published|archived
+});
+
+export const lessons = pgTable("lessons", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  courseId: uuid("course_id").notNull().references(() => courses.id),
+  position: integer("position").notNull(),
+  title: text("title").notNull(),
+  kind: text("kind").notNull(), // video|sop|doc|quiz
+  videoFileId: uuid("video_file_id").references(() => files.id),
+  hlsKey: text("hls_key"),
+  transcript: jsonb("transcript"), // segments, filled by whisper worker
+  chapters: jsonb("chapters").default([]),
+  sopId: uuid("sop_id").references(() => sops.id),
+  body: text("body"),
+  estMinutes: integer("est_minutes"),
+  quiz: jsonb("quiz"), // {pass_threshold, questions[]}
+});
+
+export const trainingAssignments = pgTable("training_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  courseId: uuid("course_id").notNull().references(() => courses.id),
+  roles: text("roles").array().default(sql`'{}'`), // auto-assign on role match
+  userIds: uuid("user_ids").array().default(sql`'{}'`), // manual assigns
+  dueDays: integer("due_days").notNull().default(14),
+  active: boolean("active").notNull().default(true),
+});
+
+export const lessonProgress = pgTable(
+  "lesson_progress",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id),
+    lessonId: uuid("lesson_id").notNull().references(() => lessons.id),
+    status: text("status").notNull().default("todo"), // todo|in_progress|done
+    score: numeric("score"),
+    attempts: integer("attempts").notNull().default(0),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.lessonId] })],
+);
+
+export const notebookGaps = pgTable("notebook_gaps", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  question: text("question").notNull(),
+  askedBy: uuid("asked_by").references(() => users.id),
+  confidence: text("confidence").notNull(), // thin|none
+  resolvedSopId: uuid("resolved_sop_id").references(() => sops.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ===== Onboarding (db/003-theming-slack-extras.sql, docs/10) =====
 
 export const intakeForms = pgTable("intake_forms", {
@@ -617,3 +713,10 @@ export type MetricSource = typeof metricSources.$inferSelect;
 export type MetricRow = typeof metricRows.$inferSelect;
 export type IntakeForm = typeof intakeForms.$inferSelect;
 export type ProjectTemplate = typeof projectTemplates.$inferSelect;
+export type Sop = typeof sops.$inferSelect;
+export type KbChunk = typeof kbChunks.$inferSelect;
+export type Course = typeof courses.$inferSelect;
+export type Lesson = typeof lessons.$inferSelect;
+export type TrainingAssignment = typeof trainingAssignments.$inferSelect;
+export type LessonProgress = typeof lessonProgress.$inferSelect;
+export type NotebookGap = typeof notebookGaps.$inferSelect;

@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { files, meetings, transcripts } from "@/lib/db/schema";
+import { files, lessons, meetings, transcripts } from "@/lib/db/schema";
 import { r2GetToFile } from "@/lib/r2";
 import { getQueue } from "@/lib/queues";
 
@@ -63,6 +63,36 @@ export async function transcribeMeeting(meetingId: string): Promise<{ segments: 
   } catch (e) {
     await db.update(meetings).set({ status: "failed" }).where(eq(meetings.id, meetingId));
     throw e;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Transcribe a lesson video (docs/16): same whisper worker, segments stored on
+ * the lesson itself, then handed to the kb-embed job so the Notebook can cite
+ * lesson timestamps.
+ */
+export async function transcribeLesson(lessonId: string): Promise<{ segments: number }> {
+  const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId));
+  if (!lesson) throw new Error(`Lesson ${lessonId} not found`);
+  if (!lesson.videoFileId) throw new Error(`Lesson ${lessonId} has no video`);
+  const [file] = await db.select().from(files).where(eq(files.id, lesson.videoFileId));
+  if (!file) throw new Error(`Video file for lesson ${lessonId} not found`);
+
+  const dir = await mkdtemp(path.join(tmpdir(), "agencyos-tx-"));
+  try {
+    const src = path.join(dir, "video");
+    const outJson = path.join(dir, "out.json");
+    await r2GetToFile(file.r2Key, src);
+    await run(TRANSCRIBE_CMD, [TRANSCRIBE_SCRIPT, "--input", src, "--output", outJson], {
+      timeout: TRANSCRIBE_TIMEOUT_MS,
+      maxBuffer: 128 * 1024 * 1024,
+    });
+    const parsed = JSON.parse(await readFile(outJson, "utf8")) as { segments: Segment[] };
+    await db.update(lessons).set({ transcript: parsed.segments }).where(eq(lessons.id, lessonId));
+    await getQueue("ai").add("embed-lesson", { lessonId });
+    return { segments: parsed.segments.length };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

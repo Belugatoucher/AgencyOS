@@ -3,8 +3,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { assets, files, reviewVersions } from "@/lib/db/schema";
+import { assets, files, lessons, reviewVersions } from "@/lib/db/schema";
 import { r2GetToFile, r2PutFile } from "@/lib/r2";
+import { getQueue } from "@/lib/queues";
 import { hlsLadder, imageThumbnail, mediaKind, spriteSheet, videoThumbnail } from "./ffmpeg";
 
 // Media keys live alongside the source object under a derived namespace.
@@ -109,4 +110,33 @@ export async function processReviewVersion(versionId: string): Promise<{ status:
     await db.update(reviewVersions).set({ status: "failed" }).where(eq(reviewVersions.id, versionId));
     throw e;
   }
+}
+
+/**
+ * Lesson video (docs/16 reuse map): HLS ladder via the same ffmpeg rail as
+ * Review, then hand off to the whisper worker for the transcript.
+ */
+export async function processLessonMedia(lessonId: string): Promise<{ status: string }> {
+  const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId));
+  if (!lesson) throw new Error(`Lesson ${lessonId} not found`);
+  if (!lesson.videoFileId) throw new Error(`Lesson ${lessonId} has no video`);
+  const [file] = await db.select().from(files).where(eq(files.id, lesson.videoFileId));
+  if (!file) throw new Error(`File for lesson ${lessonId} not found`);
+  if (mediaKind(file.mime) !== "video") throw new Error(`Lesson ${lessonId} file is not video`);
+
+  const hlsDirKey = derivedKey(file.r2Key, `lesson/${lessonId}/hls`);
+  await withTempDir(async (dir) => {
+    const src = path.join(dir, "src");
+    await r2GetToFile(file.r2Key, src);
+    const hlsDir = path.join(dir, "hls");
+    await import("node:fs/promises").then((fs) => fs.mkdir(hlsDir, { recursive: true }));
+    await hlsLadder(src, hlsDir);
+    for (const name of await readdir(hlsDir)) {
+      const ct = name.endsWith(".m3u8") ? "application/vnd.apple.mpegurl" : "video/mp2t";
+      await r2PutFile(`${hlsDirKey}/${name}`, path.join(hlsDir, name), ct);
+    }
+  });
+  await db.update(lessons).set({ hlsKey: `${hlsDirKey}/master.m3u8` }).where(eq(lessons.id, lessonId));
+  await getQueue("transcribe").add("transcribe-lesson", { lessonId });
+  return { status: "ready" };
 }
