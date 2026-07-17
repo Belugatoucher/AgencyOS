@@ -180,6 +180,29 @@ export async function applyNotes(meetingId: string, notes: Notes): Promise<void>
       set: { summary: notes.summary, decisions: notes.decisions, actionItems, followups: notes.followups, raw: notes },
     });
 
+  // Auto-link by attendee (docs/03): match attendee emails against leads; if a
+  // match is found and the meeting isn't linked yet, set lead_id (and account_id
+  // from the lead) so sales context lives where the deal is.
+  if (!meeting.leadId) {
+    const attendees = (meeting.attendees as { name?: string; email?: string }[]) ?? [];
+    const emails = attendees.map((a) => a.email?.toLowerCase()).filter((e): e is string => !!e);
+    if (emails.length) {
+      const { leads } = await import("@/lib/db/schema");
+      const { inArray, sql } = await import("drizzle-orm");
+      const [lead] = await db
+        .select({ id: leads.id, accountId: leads.accountId })
+        .from(leads)
+        .where(inArray(sql`lower(${leads.email})`, emails))
+        .limit(1);
+      if (lead) {
+        await db
+          .update(meetings)
+          .set({ leadId: lead.id, accountId: meeting.accountId ?? lead.accountId ?? null })
+          .where(eq(meetings.id, meetingId));
+      }
+    }
+  }
+
   await db.update(meetings).set({ status: "ready" }).where(eq(meetings.id, meetingId));
 
   // Notify internal users of the account.
