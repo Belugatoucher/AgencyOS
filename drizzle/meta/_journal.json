@@ -15,6 +15,13 @@
       "when": 1784312520249,
       "tag": "0001_blushing_kree",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784314087453,
+      "tag": "0002_loose_prodigy",
+      "breakpoints": true
     }
   ]
 }

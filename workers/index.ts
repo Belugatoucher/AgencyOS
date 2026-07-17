@@ -5,6 +5,7 @@ import { jobRuns } from "../lib/db/schema";
 import { bullConnection, getQueue, QUEUE_NAMES, type QueueName } from "../lib/queues";
 import { runDueRecurringRules } from "../lib/services/recurring";
 import { sendDailyDigests } from "../lib/services/digest";
+import { applyLeadScore, scoreLead } from "../lib/services/lead-scoring";
 
 // Worker skeleton: every queue gets a Worker whose processors dispatch by job
 // name and always record a job_runs row (docs/00 — failures surface in
@@ -19,6 +20,14 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     // trivially verifiable job so the pipeline can be exercised end-to-end
     async heartbeat() {
       return { ok: true, at: new Date().toISOString() };
+    },
+    // Lead scoring (docs/02): score via Claude, then write score + rationale
+    // and append the JSON as a note. Human gates remain (never moves a stage).
+    async "score-lead"(job) {
+      const { leadId } = job.data as { leadId: string };
+      const score = await scoreLead(leadId);
+      await applyLeadScore(leadId, score);
+      return { leadId, score: score.score, band: score.band };
     },
   },
   ghl: {},

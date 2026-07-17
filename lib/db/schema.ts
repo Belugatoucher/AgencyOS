@@ -19,6 +19,9 @@ export const accounts = pgTable("accounts", {
   ghlLocationId: text("ghl_location_id").unique(),
   timezone: text("timezone").notNull().default("America/New_York"),
   brand: jsonb("brand").notNull().default({}),
+  // Leads (db/006-leads-manual.sql)
+  leadMode: text("lead_mode").notNull().default("manual"), // manual|ghl
+  portalLeads: text("portal_leads").notNull().default("off"), // off|summary|full
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
@@ -62,6 +65,71 @@ export const files = pgTable("files", {
   sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
   checksum: text("checksum"),
   uploadedBy: uuid("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ===== Leads (db/schema.sql + 006-leads-manual.sql, docs/02) =====
+
+export const pipelines = pgTable("pipelines", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  name: text("name").notNull(),
+  position: integer("position").notNull().default(0),
+  intakeToken: text("intake_token").unique(), // public form endpoint; null = disabled
+  ghlPipelineId: text("ghl_pipeline_id"), // set in ghl mode
+});
+
+export const stages = pgTable("stages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pipelineId: uuid("pipeline_id").notNull().references(() => pipelines.id),
+  name: text("name").notNull(),
+  color: text("color"),
+  position: integer("position").notNull(),
+  isWon: boolean("is_won").notNull().default(false),
+  isLost: boolean("is_lost").notNull().default(false),
+  ghlStageId: text("ghl_stage_id"),
+});
+
+export const leads = pgTable(
+  "leads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id").references(() => accounts.id), // nullable: agency's own pipeline
+    // shared (synced) fields
+    name: text("name"),
+    email: text("email"),
+    phone: text("phone"),
+    company: text("company"),
+    // legacy GHL text ids retained for ghl mirror; local uuids are authoritative
+    pipelineId: text("pipeline_id"),
+    stageId: text("stage_id"),
+    pipelineUuid: uuid("pipeline_uuid").references(() => pipelines.id),
+    stageUuid: uuid("stage_uuid").references(() => stages.id),
+    valueCents: bigint("value_cents", { mode: "number" }),
+    status: text("status"),
+    tags: text("tags").array(),
+    source: text("source"),
+    links: jsonb("links").notNull().default([]), // website, socials
+    // internal-only fields
+    ownerId: uuid("owner_id").references(() => users.id),
+    score: integer("score"),
+    scoreRationale: text("score_rationale"),
+    nextActionAt: timestamp("next_action_at", { withTimezone: true }),
+    internalNotes: text("internal_notes"),
+    clientHidden: boolean("client_hidden").notNull().default(false),
+    ghlUpdatedAt: timestamp("ghl_updated_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("leads_board").on(t.accountId, t.pipelineUuid, t.stageUuid)],
+);
+
+export const leadActivities = pgTable("lead_activities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  leadId: uuid("lead_id").notNull().references(() => leads.id),
+  kind: text("kind").notNull(), // note|stage_change|call|conflict|ghl_event
+  body: jsonb("body").notNull(),
+  actorId: uuid("actor_id").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -174,3 +242,7 @@ export type Task = typeof tasks.$inferSelect;
 export type TaskChecklistItem = typeof taskChecklist.$inferSelect;
 export type TaskComment = typeof taskComments.$inferSelect;
 export type RecurringRule = typeof recurringRules.$inferSelect;
+export type Pipeline = typeof pipelines.$inferSelect;
+export type Stage = typeof stages.$inferSelect;
+export type Lead = typeof leads.$inferSelect;
+export type LeadActivity = typeof leadActivities.$inferSelect;
