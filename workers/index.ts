@@ -10,6 +10,7 @@ import { processAssetThumbnail, processReviewVersion } from "../lib/media/jobs";
 import { flagExpiringAssets } from "../lib/services/asset-rights";
 import { transcribeMeeting } from "../lib/transcribe";
 import { applyNotes, generateNotes } from "../lib/services/meeting-notes";
+import { enqueueDuePosts, publishPost } from "../lib/scheduler/publish";
 
 // Worker skeleton: every queue gets a Worker whose processors dispatch by job
 // name and always record a job_runs row (docs/00 — failures surface in
@@ -59,7 +60,13 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     },
   },
   ghl: {},
-  publish: {},
+  publish: {
+    // Deliver one post via the active adapter (manual default, GHL behind creds)
+    async "publish-post"(job) {
+      const { postId } = job.data as { postId: string };
+      return publishPost(postId);
+    },
+  },
   cron: {
     // Spawn tasks for recurring rules whose next_run_at has passed.
     async "spawn-recurring"() {
@@ -73,6 +80,10 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     // and any expired asset still marked approved.
     async "asset-rights-sweep"() {
       return flagExpiringAssets();
+    },
+    // Enqueue due scheduled posts for publishing (docs/06)
+    async "publish-sweep"() {
+      return enqueueDuePosts();
     },
   },
 };
@@ -148,6 +159,11 @@ async function registerSchedules() {
     "asset-rights-sweep",
     {},
     { repeat: { pattern: "0 7 * * 1" }, jobId: "asset-rights-sweep" }, // Mon 07:00
+  );
+  await cron.add(
+    "publish-sweep",
+    {},
+    { repeat: { pattern: "*/2 * * * *" }, jobId: "publish-sweep" }, // every 2 min
   );
   console.log("[worker] cron schedules registered");
 }

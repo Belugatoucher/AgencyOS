@@ -302,6 +302,47 @@ export const shareLinks = pgTable("share_links", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ===== Scheduler (db/schema.sql, docs/06) =====
+
+export const posts = pgTable(
+  "posts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id").notNull().references(() => accounts.id),
+    channels: text("channels").array().notNull(), // facebook|instagram|linkedin|tiktok|gbp
+    body: text("body"),
+    channelOverrides: jsonb("channel_overrides").default({}), // {"instagram":{"body":"..."}}
+    media: uuid("media").array().default(sql`'{}'`), // asset ids
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+    status: text("status").notNull().default("idea"), // idea|draft|in_approval|approved|scheduled|published|failed
+    approvalRequired: boolean("approval_required").notNull().default(true),
+    ghlPostId: text("ghl_post_id"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    permalinks: jsonb("permalinks").default({}),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("posts_calendar").on(t.accountId, t.scheduledAt)],
+);
+
+export const postApprovals = pgTable("post_approvals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  postId: uuid("post_id").notNull().references(() => posts.id),
+  decision: text("decision").notNull(), // approved|rejected
+  decidedBy: uuid("decided_by").references(() => users.id),
+  guestName: text("guest_name"),
+  comment: text("comment"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const contentSlots = pgTable("content_slots", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  rrule: text("rrule").notNull(), // e.g. FREQ=WEEKLY;BYDAY=TU,TH,SA
+  channels: text("channels").array().notNull(),
+  label: text("label"),
+});
+
 // ===== Notes (db/schema.sql, docs/03) =====
 
 export const meetings = pgTable("meetings", {
@@ -413,3 +454,6 @@ export type ShareLink = typeof shareLinks.$inferSelect;
 export type Meeting = typeof meetings.$inferSelect;
 export type Transcript = typeof transcripts.$inferSelect;
 export type MeetingNotes = typeof meetingNotes.$inferSelect;
+export type Post = typeof posts.$inferSelect;
+export type PostApproval = typeof postApprovals.$inferSelect;
+export type ContentSlot = typeof contentSlots.$inferSelect;
