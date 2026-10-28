@@ -12,7 +12,7 @@ import { canMutateAccount, canViewAccount, type Viewer } from "@/lib/access";
 import { db } from "@/lib/db";
 import { files, type FileRecord } from "@/lib/db/schema";
 import { err, ok, type Result } from "@/lib/result";
-import { r2Bucket, r2Client } from "@/lib/r2";
+import { r2Bucket, r2Client, r2PresignClient } from "@/lib/r2";
 
 // Browser ↔ R2 direct via presigned URLs; the app never proxies bytes
 // (CLAUDE.md rule 5). Multipart above 100MB per HANDOFF item 7.
@@ -75,13 +75,14 @@ export async function presignUpload(
     return err("forbidden", "Only the team can upload files");
   }
 
-  const client = r2Client();
+  const client = r2Client(); // server-side calls (CreateMultipartUpload)
+  const signer = r2PresignClient(); // URLs the browser will open
   const bucket = r2Bucket();
   const key = objectKey(input.accountId, input.filename);
 
   if (input.sizeBytes <= MULTIPART_THRESHOLD) {
     const url = await getSignedUrl(
-      client,
+      signer,
       new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: input.mime }),
       { expiresIn: PRESIGN_TTL },
     );
@@ -97,7 +98,7 @@ export async function presignUpload(
     Array.from({ length: partCount }, (_, i) => i + 1).map(async (partNumber) => ({
       partNumber,
       url: await getSignedUrl(
-        client,
+        signer,
         new UploadPartCommand({ Bucket: bucket, Key: key, UploadId: uploadId, PartNumber: partNumber }),
         { expiresIn: PRESIGN_TTL },
       ),

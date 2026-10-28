@@ -45,6 +45,22 @@ Change the app port binding in `docker-compose.local.yml` from
 firewall the box to your LAN. TLS on a LAN: put Caddy back in front with its
 internal CA (`tls internal`) — the prod `Caddyfile` works with one line changed.
 
+## File uploads and downloads (MinIO)
+
+Browsers upload and download files **directly** from MinIO using presigned
+URLs (the app never proxies bytes). Those URLs are signed for
+`R2_PUBLIC_ENDPOINT`, which must be an address the *browser* can reach:
+
+| Who opens Agency OS | R2_PUBLIC_ENDPOINT | Also do |
+|---|---|---|
+| Only this machine | `http://127.0.0.1:9000` (default) | nothing |
+| Your devices over Tailscale | `https://<machine>.<tailnet>.ts.net:9443` | `tailscale serve --bg --https=9443 9000` |
+| LAN | `http://<lan-ip>:9000` | bind MinIO's 9000 to `0.0.0.0` in the compose file |
+
+The app and worker still talk to MinIO internally at `http://minio:9000`.
+If uploads fail with `SignatureDoesNotMatch`, the browser reached MinIO under
+a different host than `R2_PUBLIC_ENDPOINT`: make them identical.
+
 ## What still needs the internet (all optional)
 
 - `ANTHROPIC_API_KEY` — every AI feature (scoring, notes, drafting, Brain,

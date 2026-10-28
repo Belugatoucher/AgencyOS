@@ -16,6 +16,25 @@ export function r2Client(): S3Client {
   });
 }
 
+// Presigned URLs are opened by the *browser*, so they must be signed for an
+// address the browser can reach. In the local-hosting profile R2_ENDPOINT is
+// http://minio:9000 (only resolvable inside Docker); R2_PUBLIC_ENDPOINT is
+// where browsers reach MinIO (e.g. http://127.0.0.1:9000 or a Tailscale URL).
+// Signing needs no network call, so this client is used only for presigning.
+export function r2PresignClient(): S3Client {
+  const publicEndpoint = process.env.R2_PUBLIC_ENDPOINT;
+  if (!publicEndpoint) return r2Client();
+  return new S3Client({
+    region: "auto",
+    endpoint: publicEndpoint,
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY ?? "",
+      secretAccessKey: process.env.R2_SECRET ?? "",
+    },
+  });
+}
+
 export function r2Bucket(): string {
   return process.env.R2_BUCKET ?? "agencyos";
 }
@@ -46,7 +65,7 @@ export async function r2PutFile(key: string, srcPath: string, contentType: strin
 export async function r2SignedGetUrl(key: string, ttlSeconds = 15 * 60): Promise<string> {
   const { GetObjectCommand } = await import("@aws-sdk/client-s3");
   const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-  return getSignedUrl(r2Client(), new GetObjectCommand({ Bucket: r2Bucket(), Key: key }), {
+  return getSignedUrl(r2PresignClient(), new GetObjectCommand({ Bucket: r2Bucket(), Key: key }), {
     expiresIn: ttlSeconds,
   });
 }

@@ -22,6 +22,8 @@ services:
       DATABASE_URL: postgresql://agencyos:${POSTGRES_PASSWORD}@postgres:5432/agencyos
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       R2_ENDPOINT: http://minio:9000
+      # Where browsers reach MinIO for direct uploads/downloads (presigned URLs).
+      R2_PUBLIC_ENDPOINT: ${R2_PUBLIC_ENDPOINT:-http://127.0.0.1:9000}
       R2_ACCESS_KEY: ${MINIO_ROOT_USER}
       R2_SECRET: ${MINIO_ROOT_PASSWORD}
       R2_BUCKET: agencyos
@@ -94,6 +96,7 @@ services:
     volumes:
       - minio-data:/data
     ports:
+      - "127.0.0.1:9000:9000" # S3 API: browsers upload/download here via presigned URLs
       - "127.0.0.1:9001:9001" # admin console (optional)
     networks: [internal]
 
