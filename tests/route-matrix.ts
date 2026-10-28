@@ -63,6 +63,10 @@ type Fixture = {
   courseId: string; // published Academy course (global, internal-only)
   paidCourseEntitled: string; // paid course clientA is entitled to
   paidCourseLocked: string; // paid course clientA is NOT entitled to
+  siteB: string; // Sites (docs/18) — site in B
+  siteDesignB: string; // proposed design system on siteB
+  siteBuildB: string; // manual build on siteB, running (awaiting a report)
+  siteDeployB: string; // ready production deploy on siteB
   cookies: Record<"admin" | "member" | "clientA" | "anon", string | null>;
 };
 
@@ -214,6 +218,25 @@ async function setup(): Promise<Fixture> {
     .returning();
   await db.insert(courseEntitlements).values({ courseId: paidEntitled!.id, userId: clientAId });
 
+  // Sites fixture in B (docs/18 — internal-only; clients get 404 everywhere).
+  const { sites, siteDesignSystems, siteBuilds, siteDeploys } = await import("../lib/db/schema");
+  const [siteB] = await db
+    .insert(sites)
+    .values({ accountId: b!.id, name: `Matrix site ${tag}`, slug: `matrix-site-${tag}`.toLowerCase().replace(/[^a-z0-9-]/g, "-"), stage: "design" })
+    .returning();
+  const [siteDesignB] = await db
+    .insert(siteDesignSystems)
+    .values({ siteId: siteB!.id, version: 1, status: "proposed", rationale: "matrix probe" })
+    .returning();
+  const [siteBuildB] = await db
+    .insert(siteBuilds)
+    .values({ siteId: siteB!.id, kind: "initial", status: "running", runner: "manual", skillPack: "vngrd-default" })
+    .returning();
+  const [siteDeployB] = await db
+    .insert(siteDeploys)
+    .values({ siteId: siteB!.id, environment: "production", status: "ready", url: "https://example.com" })
+    .returning();
+
   return {
     accountA: a!.id,
     accountB: b!.id,
@@ -237,6 +260,10 @@ async function setup(): Promise<Fixture> {
     courseId: course!.id,
     paidCourseEntitled: paidEntitled!.id,
     paidCourseLocked: paidLocked!.id,
+    siteB: siteB!.id,
+    siteDesignB: siteDesignB!.id,
+    siteBuildB: siteBuildB!.id,
+    siteDeployB: siteDeployB!.id,
     cookies: {
       admin: await mintSession(adminId),
       member: await mintSession(memberId),
@@ -871,6 +898,96 @@ const CASES: Case[] = [
     path: (f) => `/api/courses/${f.paidCourseLocked}`,
     body: () => ({ priceCents: 9900 }),
     expect: { admin: 200, member: 200, clientA: 403, anon: ANON },
+  },
+  // ===== Sites (docs/18 — internal-only; clients 404 so nothing is probeable) =====
+  {
+    name: "GET sites overview (clients: not found)",
+    method: "GET",
+    path: () => "/api/sites",
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET site in B",
+    method: "GET",
+    path: (f) => `/api/sites/${f.siteB}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST site for A (clients cannot create, even in their own account)",
+    method: "POST",
+    path: () => "/api/sites",
+    body: (f) => ({ accountId: f.accountA, name: "Matrix probe site" }),
+    expect: { admin: 201, member: 201, clientA: 404, anon: ANON },
+  },
+  {
+    name: "PATCH site in B",
+    method: "PATCH",
+    path: (f) => `/api/sites/${f.siteB}`,
+    body: () => ({ name: "Matrix site renamed" }),
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET site B designs",
+    method: "GET",
+    path: (f) => `/api/sites/${f.siteB}/designs`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET site B builds",
+    method: "GET",
+    path: (f) => `/api/sites/${f.siteB}/builds`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET site B deploys",
+    method: "GET",
+    path: (f) => `/api/sites/${f.siteB}/deploys`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET site B health",
+    method: "GET",
+    path: (f) => `/api/sites/${f.siteB}/health`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET site B analytics",
+    method: "GET",
+    path: (f) => `/api/sites/${f.siteB}/analytics?days=28`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST reject design in B (client refused; second decision conflicts)",
+    method: "POST",
+    path: (f) => `/api/sites/designs/${f.siteDesignB}/decision`,
+    body: () => ({ decision: "reject", note: "matrix probe" }),
+    expect: { admin: [200, 409], member: [200, 409], clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST report on manual build in B (client refused)",
+    method: "POST",
+    path: (f) => `/api/sites/builds/${f.siteBuildB}/report`,
+    body: () => ({ ok: false, summary: "matrix probe", error: "probe" }),
+    expect: { admin: [200, 409], member: [200, 409], clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST rollback to B deploy (client refused; already live conflicts)",
+    method: "POST",
+    path: (f) => `/api/sites/deploys/${f.siteDeployB}/rollback`,
+    expect: { admin: 409, member: 409, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET skill packs (internal only)",
+    method: "GET",
+    path: () => "/api/sites/skill-packs",
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST /api/sites/hooks/runner unconfigured → 501 (never open)",
+    method: "POST",
+    path: () => "/api/sites/hooks/runner",
+    body: () => ({ runRef: "probe", outcome: {} }),
+    expect: { admin: 501, member: 501, clientA: 501, anon: 501 },
   },
 ];
 

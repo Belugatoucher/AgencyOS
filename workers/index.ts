@@ -18,6 +18,10 @@ import { enqueueDuePosts, publishPost } from "../lib/scheduler/publish";
 import { embedResearchDoc } from "../lib/services/research";
 import { rollupAllAccounts, unmatchedSpendDigest } from "../lib/services/metrics";
 import { sendClientDigests } from "../lib/services/portal-digest";
+import { runCrawl } from "../lib/services/site-intake";
+import { runProposal } from "../lib/services/site-design";
+import { applyRunnerCallback, buildOutcomeInput, optimizeWeekly, pollBuild, runBuild } from "../lib/services/site-builds";
+import { analyticsPull, healthSweep, pollDeploy, runDeploy, runHealth } from "../lib/services/site-ops";
 
 // Worker skeleton: every queue gets a Worker whose processors dispatch by job
 // name and always record a job_runs row (docs/00 — failures surface in
@@ -137,6 +141,16 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     async "notebook-gap-report"() {
       return notebookGapReport();
     },
+    // Sites (docs/18): health for every live site, nightly analytics, weekly optimize builds
+    async "sites-health-sweep"() {
+      return healthSweep();
+    },
+    async "sites-analytics-pull"() {
+      return analyticsPull();
+    },
+    async "sites-optimize-weekly"() {
+      return optimizeWeekly();
+    },
   },
   billing: {
     // Stripe fulfillment (db/009): grant entitlement + record purchase.
@@ -144,6 +158,43 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     async "stripe-entitle"(job) {
       const session = completedSession.parse(job.data);
       return fulfillStripeSession(session);
+    },
+  },
+  // Sites (docs/18). Each processor is idempotent on its row's status, so
+  // BullMQ retries and duplicate enqueues are no-ops.
+  sites: {
+    async "site-crawl"(job) {
+      const { snapshotId, maxPages } = job.data as { snapshotId: string; maxPages?: number };
+      return runCrawl(snapshotId, maxPages);
+    },
+    async "site-propose-design"(job) {
+      const { designSystemId } = job.data as { designSystemId: string };
+      return runProposal(designSystemId);
+    },
+    async "site-build"(job) {
+      const { buildId } = job.data as { buildId: string };
+      return runBuild(buildId);
+    },
+    async "site-build-poll"(job) {
+      const { buildId } = job.data as { buildId: string };
+      return pollBuild(buildId);
+    },
+    // remote runner callback (verified + enqueued by /api/sites/hooks/runner)
+    async "site-runner-callback"(job) {
+      const { runRef, outcome } = job.data as { runRef: string; outcome: unknown };
+      return applyRunnerCallback(runRef, buildOutcomeInput.parse(outcome));
+    },
+    async "site-deploy"(job) {
+      const { deployId } = job.data as { deployId: string };
+      return runDeploy(deployId);
+    },
+    async "site-deploy-poll"(job) {
+      const { deployId } = job.data as { deployId: string };
+      return pollDeploy(deployId);
+    },
+    async "site-health"(job) {
+      const { siteId } = job.data as { siteId: string };
+      return runHealth(siteId);
     },
   },
 };
@@ -249,6 +300,21 @@ async function registerSchedules() {
     "notebook-gap-report",
     {},
     { repeat: { pattern: "0 9 * * 3" }, jobId: "notebook-gap-report" }, // Wed 09:00 (docs/16 weekly)
+  );
+  await cron.add(
+    "sites-health-sweep",
+    {},
+    { repeat: { pattern: "*/15 * * * *" }, jobId: "sites-health-sweep" }, // every 15 min (docs/18)
+  );
+  await cron.add(
+    "sites-analytics-pull",
+    {},
+    { repeat: { pattern: "15 3 * * *" }, jobId: "sites-analytics-pull" }, // nightly 03:15 (docs/18)
+  );
+  await cron.add(
+    "sites-optimize-weekly",
+    {},
+    { repeat: { pattern: "30 7 * * 1" }, jobId: "sites-optimize-weekly" }, // Mon 07:30 (docs/18)
   );
   console.log("[worker] cron schedules registered");
 }

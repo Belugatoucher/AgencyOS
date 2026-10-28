@@ -3,8 +3,9 @@ import Redis from "ioredis";
 
 // The five queues from docs/00 plus `cron` (see DECISION 2026-07-17) and
 // `billing` (Stripe fulfillment — webhook handlers verify, enqueue, 200 in
-// <1s per CLAUDE.md rule 4; the grant itself runs here with retry + job_runs).
-export const QUEUE_NAMES = ["media", "transcribe", "ai", "ghl", "publish", "cron", "billing"] as const;
+// <1s per CLAUDE.md rule 4; the grant itself runs here with retry + job_runs)
+// and `sites` (docs/18: crawls, design proposals, agent builds, deploys, health).
+export const QUEUE_NAMES = ["media", "transcribe", "ai", "ghl", "publish", "cron", "billing", "sites"] as const;
 export type QueueName = (typeof QUEUE_NAMES)[number];
 
 export function bullConnection(): Redis {
