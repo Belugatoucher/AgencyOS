@@ -1,0 +1,14 @@
+{
+  "id": "searchmaxxed",
+  "name": "Searchmaxxed",
+  "version": "0.0.0",
+  "description": "Placeholder for the Searchmaxxed agentic-website skill files (build + weekly optimization loop).",
+  "enabled": false,
+  "disabledReason": "Confirm the course licence allows use inside a multi-client agency tool before importing its skill files.",
+  "source": { "kind": "git" },
+  "phases": {
+    "build": "build.md",
+    "optimize": "optimize.md"
+  },
+  "expects": { "host": ["vercel"] }
+}

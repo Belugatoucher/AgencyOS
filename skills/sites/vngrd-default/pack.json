@@ -1,0 +1,14 @@
+{
+  "id": "vngrd-default",
+  "name": "VNGRD default",
+  "version": "0.1.0",
+  "description": "VNGRD's own skill pack: static-first marketing sites for local-service clients, built from an approved design system, with GHL forms.",
+  "enabled": true,
+  "source": { "kind": "local" },
+  "phases": {
+    "build": "build.md",
+    "optimize": "optimize.md",
+    "audit": "audit.md"
+  },
+  "expects": { "framework": "astro", "host": ["manual", "cloudflare_pages", "vercel"] }
+}
