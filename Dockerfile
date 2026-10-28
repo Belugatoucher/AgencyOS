@@ -23,6 +23,9 @@ COPY --from=build /app/next.config.ts ./next.config.ts
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/lib ./lib
+# Sites (docs/18): skill-pack manifests are read at runtime; AI prompts are loaded from disk
+COPY --from=build /app/skills ./skills
+COPY --from=build /app/prompts ./prompts
 EXPOSE 3000
 # Migrations run before the server starts; safe to re-run (no-op when current).
 CMD ["sh", "-c", "npx tsx scripts/migrate.ts && pnpm start"]

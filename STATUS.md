@@ -1,6 +1,15 @@
-# STATUS — through Weeks 11-12 + hardening pass (sanitization · password auth · paid DIY · local hosting)
+# STATUS — Sites module scaffold (docs/18) on top of Weeks 11-12 + hardening
 
-_Last session: 2026-07-17. Read this first next session (HANDOFF.md rule)._
+_Last session: 2026-10-28. Read this first next session (HANDOFF.md rule)._
+
+## Sites — agentic website builder (docs/18, db/010) — FRAMEWORK IN PLACE, NOT YET RUN
+Branch `claude/sites-module`. Intake → design system proposal (approve) → agent build (approve) → deploy → health + analytics, all internal-only.
+- **Done**: schema (db/010 + Drizzle), pipeline stage machine + next-action logic, adapter interfaces + registry, fetch crawler (SSRF-guarded), Claude design proposer + prompt, manual and remote build runners (signed HTTP contract), manual host, uptime/SSL/PageSpeed probes, skill-pack registry + `vngrd-default` skeleton (+ disabled `searchmaxxed` placeholder), credential encryption helper, 5 services, `sites` queue + 8 processors + 3 crons, 16 API routes, `/sites` dashboard + `/sites/[id]` (8 tabs), nav link, 14 route-matrix cases, env + Dockerfile.
+- **Verified**: only the pure modules — 30 unit tests (pipeline gates/stages/next actions, URL + SSRF guards, HTML/brand extraction, runner HMAC, AES-GCM round-trip/tamper) pass under node's test runner with a vitest shim. **The npm registry was blocked in that session**, so no `pnpm install`, no Vitest, no build, no route-matrix, no e2e. Type-check showed no errors in the new files beyond missing-dependency noise.
+- **Do first next session**: `pnpm install` → `pnpm db:generate` (creates the 0012 migration from schema.ts; db/010 is the reference) → `pnpm db:migrate` → `pnpm test` → `pnpm build` → `pnpm test:matrix` (expect +14) → click through: New site → crawl → propose (needs ANTHROPIC_API_KEY) → approve → manual build → report → approve → live.
+- **Then** (checklist in docs/18): credentials UI, remote runner service (Agent SDK in a container), GitHub repo provider, Cloudflare Pages host + deploy webhook, GSC/GA4/GHL analytics, remaining probes, `vngrd-default` pack content, Searchmaxxed licence check.
+
+## Previous session (2026-07-17)
 
 ## Stripe for DIY courses (db/009) — COMPLETE
 - **Storefront** — public `/diy` page lists published paid courses with prices (`courses.price_cents`; inline Checkout `price_data`, no dashboard products). Buy → rate-limited `/api/diy/checkout` → Stripe Checkout → back to `/learn?purchased=1`. 501 until `STRIPE_SECRET_KEY` is set; catalog shows "Coming soon".
