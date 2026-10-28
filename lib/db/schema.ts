@@ -654,6 +654,167 @@ export const metricRows = pgTable(
   (t) => [unique("metric_rows_source_ext_date").on(t.sourceId, t.externalId, t.date)],
 );
 
+// ===== Sites (db/010-sites.sql, docs/18) =====
+
+export const sites = pgTable(
+  "sites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id").notNull().references(() => accounts.id),
+    projectId: uuid("project_id").references(() => projects.id),
+    name: text("name").notNull(),
+    slug: text("slug").notNull().unique(),
+    stage: text("stage").notNull().default("intake"), // intake|design|build|review|live|paused|archived
+    domain: text("domain"),
+    productionUrl: text("production_url"),
+    previewUrl: text("preview_url"),
+    sourceUrl: text("source_url"),
+    host: text("host").notNull().default("manual"), // manual|cloudflare_pages|vercel|ghl|external
+    hostRef: text("host_ref"),
+    repo: text("repo").notNull().default("manual"), // manual|github
+    repoRef: text("repo_ref"),
+    skillPack: text("skill_pack").notNull().default("vngrd-default"),
+    settings: jsonb("settings").notNull().default({}),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [index("sites_account_idx").on(t.accountId).where(sql`deleted_at is null`)],
+);
+
+export const siteSnapshots = pgTable(
+  "site_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    siteId: uuid("site_id").notNull().references(() => sites.id),
+    sourceUrl: text("source_url").notNull(),
+    status: text("status").notNull().default("queued"), // queued|running|done|failed
+    pages: jsonb("pages").notNull().default([]),
+    brand: jsonb("brand").notNull().default({}),
+    audit: jsonb("audit").notNull().default({}),
+    pageCount: integer("page_count").notNull().default(0),
+    error: text("error"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("site_snapshots_site_idx").on(t.siteId, t.createdAt.desc())],
+);
+
+export const siteDesignSystems = pgTable(
+  "site_design_systems",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    siteId: uuid("site_id").notNull().references(() => sites.id),
+    snapshotId: uuid("snapshot_id").references(() => siteSnapshots.id),
+    version: integer("version").notNull(),
+    status: text("status").notNull().default("drafting"), // drafting|proposed|approved|rejected|superseded|failed
+    brief: text("brief"),
+    tokens: jsonb("tokens").notNull().default({}),
+    components: jsonb("components").notNull().default([]),
+    sitemap: jsonb("sitemap").notNull().default([]),
+    rationale: text("rationale"),
+    error: text("error"),
+    decidedBy: uuid("decided_by").references(() => users.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decisionNote: text("decision_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("site_design_systems_site_version").on(t.siteId, t.version)],
+);
+
+export const siteBuilds = pgTable(
+  "site_builds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    siteId: uuid("site_id").notNull().references(() => sites.id),
+    designSystemId: uuid("design_system_id").references(() => siteDesignSystems.id),
+    kind: text("kind").notNull(), // initial|change|optimize
+    status: text("status").notNull().default("queued"), // queued|running|awaiting_review|approved|rejected|failed|cancelled
+    brief: text("brief"),
+    runner: text("runner").notNull(),
+    skillPack: text("skill_pack").notNull(),
+    skillPackVersion: text("skill_pack_version"),
+    branch: text("branch"),
+    commitSha: text("commit_sha"),
+    previewUrl: text("preview_url"),
+    summary: text("summary"),
+    changes: jsonb("changes").notNull().default([]),
+    log: jsonb("log").notNull().default([]),
+    runRef: text("run_ref"),
+    error: text("error"),
+    requestedBy: uuid("requested_by").references(() => users.id),
+    decidedBy: uuid("decided_by").references(() => users.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decisionNote: text("decision_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("site_builds_site_idx").on(t.siteId, t.createdAt.desc())],
+);
+
+export const siteDeploys = pgTable(
+  "site_deploys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    siteId: uuid("site_id").notNull().references(() => sites.id),
+    buildId: uuid("build_id").references(() => siteBuilds.id),
+    environment: text("environment").notNull(), // preview|production
+    status: text("status").notNull().default("queued"), // queued|building|ready|failed|rolled_back
+    providerRef: text("provider_ref"),
+    url: text("url"),
+    commitSha: text("commit_sha"),
+    error: text("error"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("site_deploys_site_idx").on(t.siteId, t.createdAt.desc())],
+);
+
+export const siteChecks = pgTable(
+  "site_checks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    siteId: uuid("site_id").notNull().references(() => sites.id),
+    kind: text("kind").notNull(), // uptime|ssl|domain|vitals|links|forms
+    status: text("status").notNull(), // ok|warn|fail|unknown
+    summary: text("summary").notNull(),
+    detail: jsonb("detail").notNull().default({}),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("site_checks_latest_idx").on(t.siteId, t.kind, t.checkedAt.desc())],
+);
+
+export const siteMetricsDaily = pgTable(
+  "site_metrics_daily",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    siteId: uuid("site_id").notNull().references(() => sites.id),
+    source: text("source").notNull(), // gsc|ga4|ghl
+    date: date("date").notNull(),
+    metrics: jsonb("metrics").notNull().default({}),
+  },
+  (t) => [unique("site_metrics_daily_site_source_date").on(t.siteId, t.source, t.date)],
+);
+
+// Audit item 2: AES-256-GCM via lib/crypto.ts. Never selected by user-facing routes.
+export const integrationCredentials = pgTable("integration_credentials", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  scope: text("scope").notNull(), // org|account
+  accountId: uuid("account_id").references(() => accounts.id),
+  provider: text("provider").notNull(),
+  label: text("label").notNull(),
+  secretEnc: text("secret_enc").notNull(),
+  last4: text("last4"),
+  meta: jsonb("meta").notNull().default({}),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
 // ===== Ops =====
 
 export const notifications = pgTable(
@@ -752,3 +913,11 @@ export type LessonProgress = typeof lessonProgress.$inferSelect;
 export type NotebookGap = typeof notebookGaps.$inferSelect;
 export type CourseEntitlement = typeof courseEntitlements.$inferSelect;
 export type CoursePurchase = typeof coursePurchases.$inferSelect;
+export type Site = typeof sites.$inferSelect;
+export type SiteSnapshot = typeof siteSnapshots.$inferSelect;
+export type SiteDesignSystem = typeof siteDesignSystems.$inferSelect;
+export type SiteBuild = typeof siteBuilds.$inferSelect;
+export type SiteDeploy = typeof siteDeploys.$inferSelect;
+export type SiteCheck = typeof siteChecks.$inferSelect;
+export type SiteMetricDaily = typeof siteMetricsDaily.$inferSelect;
+export type IntegrationCredential = typeof integrationCredentials.$inferSelect;
