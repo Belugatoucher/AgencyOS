@@ -156,7 +156,7 @@ export const tasks = pgTable(
     assigneeId: uuid("assignee_id").references(() => users.id),
     dueAt: timestamp("due_at", { withTimezone: true }),
     estimateMinutes: integer("estimate_minutes"),
-    source: text("source").notNull().default("manual"), // manual|meeting|review|recurring|asset
+    source: text("source").notNull().default("manual"), // manual|meeting|review|recurring|asset|ideation
     sourceId: uuid("source_id"),
     clientVisible: boolean("client_visible").notNull().default(false),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -815,6 +815,79 @@ export const integrationCredentials = pgTable("integration_credentials", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
+// ===== Ideation (db/011-ideation.sql, docs/19) =====
+
+export const goals = pgTable(
+  "goals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id").notNull().references(() => accounts.id),
+    title: text("title").notNull(),
+    detail: text("detail"),
+    horizon: text("horizon").notNull().default("quarter"), // quarter|year|long_term
+    metric: text("metric"),
+    target: text("target"),
+    dueOn: date("due_on"),
+    status: text("status").notNull().default("active"), // active|achieved|dropped
+    position: integer("position").notNull().default(0),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [index("goals_account_idx").on(t.accountId, t.status).where(sql`deleted_at is null`)],
+);
+
+export const ideaSessions = pgTable(
+  "idea_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id").notNull().references(() => accounts.id),
+    title: text("title"),
+    source: text("source").notNull(), // text|voice
+    audioFileId: uuid("audio_file_id").references(() => files.id),
+    transcript: text("transcript"),
+    status: text("status").notNull(), // transcribing|thinking|ready|failed
+    summary: text("summary"),
+    themes: jsonb("themes").notNull().default([]),
+    error: text("error"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [index("idea_sessions_account_idx").on(t.accountId, t.createdAt.desc()).where(sql`deleted_at is null`)],
+);
+
+export const ideaItems = pgTable(
+  "idea_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id").notNull().references(() => ideaSessions.id),
+    accountId: uuid("account_id").notNull().references(() => accounts.id),
+    kind: text("kind").notNull(), // action|goal|idea|question|risk
+    title: text("title").notNull(),
+    detail: text("detail"),
+    goalId: uuid("goal_id").references(() => goals.id),
+    alignment: text("alignment").notNull(), // advances|new_direction|off_strategy
+    alignmentNote: text("alignment_note"),
+    impact: integer("impact"),
+    effort: integer("effort"),
+    horizon: text("horizon"),
+    suggestedDue: date("suggested_due"),
+    quote: text("quote"),
+    meta: jsonb("meta").notNull().default({}), // goals: {metric, target}
+    status: text("status").notNull().default("proposed"), // proposed|accepted|dismissed|parked
+    taskId: uuid("task_id").references(() => tasks.id),
+    createdGoalId: uuid("created_goal_id").references(() => goals.id),
+    decidedBy: uuid("decided_by").references(() => users.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idea_items_session_idx").on(t.sessionId, t.position)],
+);
+
 // ===== Ops =====
 
 export const notifications = pgTable(
@@ -921,3 +994,6 @@ export type SiteDeploy = typeof siteDeploys.$inferSelect;
 export type SiteCheck = typeof siteChecks.$inferSelect;
 export type SiteMetricDaily = typeof siteMetricsDaily.$inferSelect;
 export type IntegrationCredential = typeof integrationCredentials.$inferSelect;
+export type Goal = typeof goals.$inferSelect;
+export type IdeaSession = typeof ideaSessions.$inferSelect;
+export type IdeaItem = typeof ideaItems.$inferSelect;
