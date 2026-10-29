@@ -71,6 +71,9 @@ export function SitesClient() {
               </option>
             ))}
           </Select>
+          <Link href="/sites/grader" className="rounded-md border border-border bg-card px-3 py-1.5 text-sm font-medium hover:bg-background">
+            Grader
+          </Link>
           <Button onClick={() => setShowNew((v) => !v)} data-testid="sites-new">
             {showNew ? "Close" : "New site"}
           </Button>
