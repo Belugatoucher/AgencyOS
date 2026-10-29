@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-28 — Ideation module (docs/19): rambles → ranked goals and tasks
+**Context:** Ryan wants to talk freely and get back goals and action items judged against current goals and where the business is going. Nothing in the specs covered business-level goals.
+**Decision:** New internal-only module. `goals` per account (the agency's own goals live on its internal account, the same convention as the agency prospect pipeline). A ramble is typed or recorded; voice reuses the recorder → R2 → faster-whisper rail (`transcribe-idea` on the transcribe queue), so audio never leaves our infra. `prompts/ideation.md` gets the active goals (with ids), the account's Brain and today's date in the account's time zone; output is Zod-gated with one retry. Code, not the model, decides order (`lib/ideation/rank.ts`: alignment × impact ÷ effort × urgency) and sanity-checks dates (no past or impossible dates) and goal ids (invented ids dropped). Accepting an action creates a normal task (`source = 'ideation'`, assignee = whoever accepted) so digests and due-date views pick it up; "add all" skips off-strategy items on purpose. Jobs only mark a ramble failed on their final retry.
+**Alternatives considered:** in-browser speech recognition (no infra, but Safari/Chrome only, cuts out on long rambles, and ships audio to the browser vendor); a separate goals list inside each account's Brain text field (not structured enough to align against); auto-creating tasks without review (fast, but a ramble is half-formed by design).
+**Revisit if:** Ryan wants rambles from Telegram (route Vanessa's voice notes into `POST /api/ideas/sessions`), or goals need progress tracking against real metrics (link `goals.metric` to metric_rows / site_metrics_daily).
+
 ## 2026-10-28 — Sites module (docs/18): agentic website builder as adapters + approval gates
 **Context:** Ryan asked for a website builder inside Agency OS: feed in an old site, get a proposed design system, hand it to a build agent (Searchmaxxed-style or our own skills), then deploy, monitor health and report analytics. docs/07 lists "landing pages (GHL)" under *Don't build* — that line is about hand-built funnel pages, which stay in GHL; full client sites built as code by an agent are a different product, and Ryan's request overrides the roadmap here. VNGRD Studio (earlier prompt-to-page builder) is folded into this module.
 **Decision:** New module, internal-only, framework first:

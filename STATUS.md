@@ -2,6 +2,11 @@
 
 _Last session: 2026-10-28. Read this first next session (HANDOFF.md rule)._
 
+## Ideation (docs/19, db/011) — BUILT, NOT YET RUN
+Branch `claude/ideation-module` (stacked on `claude/sites-module`). `/ideas`: pick a business, keep its goals, then type or record a ramble → Claude returns ranked actions, goal proposals, ideas, questions and strategy flags, each tied to a goal with the quote that produced it. Accepting an action creates a task in My Tasks.
+- **Verified**: ranking/date/goal-id cleanup tests (8) pass under node's runner; type-check clean apart from missing-package noise. Not run: migration, Vitest, build, matrix (+7 cases), e2e — npm registry was blocked.
+- **Do first**: same as Sites below (install → `pnpm db:generate` → migrate → test → matrix). Then: add 2–3 goals on the agency account, record a 2-minute ramble, accept an action, confirm it shows in My Tasks with its due date. Voice needs the whisper worker (`HF_TOKEN` not required — diarization is ignored here).
+
 ## Sites — agentic website builder (docs/18, db/010) — FRAMEWORK IN PLACE, NOT YET RUN
 Branch `claude/sites-module`. Intake → design system proposal (approve) → agent build (approve) → deploy → health + analytics, all internal-only.
 - **Done**: schema (db/010 + Drizzle), pipeline stage machine + next-action logic, adapter interfaces + registry, fetch crawler (SSRF-guarded), Claude design proposer + prompt, manual and remote build runners (signed HTTP contract), manual host, uptime/SSL/PageSpeed probes, skill-pack registry + `vngrd-default` skeleton (+ disabled `searchmaxxed` placeholder), credential encryption helper, 5 services, `sites` queue + 8 processors + 3 crons, 16 API routes, `/sites` dashboard + `/sites/[id]` (8 tabs), nav link, 14 route-matrix cases, env + Dockerfile.
