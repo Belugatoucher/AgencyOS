@@ -90,6 +90,15 @@ Internal only (admin/member) for now — clients never see agent runs, drafts or
 
 Deploy-provider webhooks land at `/api/sites/hooks/[provider]`: verify → enqueue → 200 in <1s; **501 when unconfigured** (same posture as Stripe/Slack).
 
+## Grader (lead magnet + prospecting)
+
+The front of the funnel for the website + SEO offer (`docs/offers/web-seo.md`). It grades any site the way a customer and Google see it, and turns the result into a lead or a pitch.
+
+- **Checks** (`lib/grader/*`, pure + tested): homepage inspection (tap-to-call, phone up top, quote form, CTA, reviews, schema, NAP, freshness, platform), a 15-page crawl (pages, missing meta, thin pages, broken links), Google PageSpeed (mobile; `PAGESPEED_API_KEY`), SSL, and an optional **Google Maps grid**: 5×5 points, 1 mile apart, around the business via DataForSEO (`DATAFORSEO_*`). It finds the business at each point and names the competitor that holds #1 most.
+- **Score:** six sections (speed, mobile, search basics, trust, getting the call, Google Maps), weighted to 0–100 with a letter grade and the top 5 fixes ordered by what costs calls. It's deterministic, so re-grading after fixes shows real movement.
+- **Public:** `/grade` (form) → `POST /api/grader` → job → `/grade/<token>` report with the offer. Each run creates a lead in `GRADER_PIPELINE_ID` and posts to the GHL inbound webhook (`GRADER_GHL_WEBHOOK_URL`) for follow-up. Without GHL, the report is emailed directly. Controls: per-IP limit, daily spend cap, honeypot, Zod caps, SSRF-guarded fetches, 192-bit expiring tokens, contact details never on the report.
+- **Internal:** `/sites/grader` grades one prospect or a list (up to 100, spaced out), shows who **opened** their report, and copies a ready pitch.
+
 ## Build checklist
 
 - [x] Spec, schema (db/010), Drizzle tables
@@ -112,5 +121,9 @@ Deploy-provider webhooks land at `/api/sites/hooks/[provider]`: verify → enque
 - [ ] Design board: render the proposed tokens/components as a visual page
 - [ ] `vngrd-default` skill pack content (build / optimize / audit)
 - [ ] Searchmaxxed pack — only after licence check
+- [x] Grader: engine, public page + report, internal console, lead + GHL handoff (db/012)
+- [ ] Grader: prospect preview site (one-page build from the Google listing), shown on the report
+- [ ] Grader: monthly re-grade + Maps grid trend per client (the client report)
+- [ ] Grader: AI-answer visibility check
 - [ ] Portal "Your website" card (uptime, leads, last update) — client-visible subset
 - [ ] Playwright smoke: create site → intake → approve design → manual build → approve → live

@@ -2,6 +2,11 @@
 
 _Last session: 2026-10-28. Read this first next session (HANDOFF.md rule)._
 
+## Website grader + web/SEO offer (docs/18 "Grader", db/012, docs/offers/web-seo.md) — BUILT, NOT YET RUN
+Branch `claude/grader` (stacked on ideation → sites). Public `/grade` + `/grade/<token>` report with the offer; internal `/sites/grader` (single + bulk, opened tracking, copy pitch); leads into `GRADER_PIPELINE_ID`; GHL inbound webhook for follow-up; report email fallback.
+- **Verified**: grader engine tests (11: inspection, scoring, Maps grid math) pass under node's runner; type-check clean apart from missing-package noise. Not run: migration, build, matrix (+4 cases), live grade.
+- **Do first**: install → `pnpm db:generate` → migrate → set PAGESPEED_API_KEY (+ DATAFORSEO_* for Maps) → grade 3 real local sites from `/sites/grader` and sanity-check the scores → wire the GHL workflow per the playbook → run the 30-day validation plan.
+
 ## Ideation (docs/19, db/011) — BUILT, NOT YET RUN
 Branch `claude/ideation-module` (stacked on `claude/sites-module`). `/ideas`: pick a business, keep its goals, then type or record a ramble → Claude returns ranked actions, goal proposals, ideas, questions and strategy flags, each tied to a goal with the quote that produced it. Accepting an action creates a task in My Tasks.
 - **Verified**: ranking/date/goal-id cleanup tests (8) pass under node's runner; type-check clean apart from missing-package noise. Not run: migration, Vitest, build, matrix (+7 cases), e2e — npm registry was blocked.
