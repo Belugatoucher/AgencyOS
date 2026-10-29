@@ -5,7 +5,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { files, lessons, meetings, transcripts } from "@/lib/db/schema";
+import { files, ideaSessions, lessons, meetings, transcripts } from "@/lib/db/schema";
+import { segmentsToText } from "@/lib/ideation/rank";
 import { r2GetToFile } from "@/lib/r2";
 import { getQueue } from "@/lib/queues";
 
@@ -93,6 +94,46 @@ export async function transcribeLesson(lessonId: string): Promise<{ segments: nu
     await db.update(lessons).set({ transcript: parsed.segments }).where(eq(lessons.id, lessonId));
     await getQueue("ai").add("embed-lesson", { lessonId });
     return { segments: parsed.segments.length };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Transcribe a voice ramble (docs/19): same whisper worker, speakers ignored,
+ * text handed to the ideation job. Audio stays on our infra.
+ */
+export async function transcribeIdea(sessionId: string, finalAttempt = true): Promise<{ chars: number }> {
+  const [session] = await db.select().from(ideaSessions).where(eq(ideaSessions.id, sessionId));
+  if (!session) throw new Error(`Idea session ${sessionId} not found`);
+  if (session.status !== "transcribing") return { chars: 0 };
+  if (!session.audioFileId) throw new Error(`Idea session ${sessionId} has no audio`);
+  const [file] = await db.select().from(files).where(eq(files.id, session.audioFileId));
+  if (!file) throw new Error(`Audio file for idea session ${sessionId} not found`);
+
+  const dir = await mkdtemp(path.join(tmpdir(), "agencyos-tx-"));
+  try {
+    const src = path.join(dir, "audio");
+    const outJson = path.join(dir, "out.json");
+    await r2GetToFile(file.r2Key, src);
+    await run(TRANSCRIBE_CMD, [TRANSCRIBE_SCRIPT, "--input", src, "--output", outJson], {
+      timeout: TRANSCRIBE_TIMEOUT_MS,
+      maxBuffer: 128 * 1024 * 1024,
+    });
+    const parsed = JSON.parse(await readFile(outJson, "utf8")) as { segments: Segment[] };
+    const text = segmentsToText(parsed.segments ?? []);
+    const { transcriptReady } = await import("@/lib/services/ideation");
+    await transcriptReady(sessionId, text);
+    return { chars: text.length };
+  } catch (e) {
+    // only the last attempt marks it failed, so BullMQ retries still find it "transcribing"
+    if (finalAttempt) {
+      await db
+        .update(ideaSessions)
+        .set({ status: "failed", error: "Transcription failed. Retry, or type the ramble instead." })
+        .where(eq(ideaSessions.id, sessionId));
+    }
+    throw e;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

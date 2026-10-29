@@ -8,7 +8,8 @@ import { sendDailyDigests } from "../lib/services/digest";
 import { applyLeadScore, scoreLead } from "../lib/services/lead-scoring";
 import { processAssetThumbnail, processLessonMedia, processReviewVersion } from "../lib/media/jobs";
 import { flagExpiringAssets } from "../lib/services/asset-rights";
-import { transcribeLesson, transcribeMeeting } from "../lib/transcribe";
+import { transcribeIdea, transcribeLesson, transcribeMeeting } from "../lib/transcribe";
+import { runIdeation } from "../lib/services/ideation";
 import { embedSop, sopStalenessSweep } from "../lib/services/sops";
 import { embedLesson } from "../lib/services/academy";
 import { notebookGapReport } from "../lib/services/notebook";
@@ -58,6 +59,11 @@ const processors: Record<QueueName, Record<string, Processor>> = {
       const { lessonId } = job.data as { lessonId: string };
       return transcribeLesson(lessonId);
     },
+    // Voice ramble → text → ideation job (docs/19)
+    async "transcribe-idea"(job) {
+      const { sessionId } = job.data as { sessionId: string };
+      return transcribeIdea(sessionId, job.attemptsMade + 1 >= (job.opts.attempts ?? 1));
+    },
   },
   ai: {
     // trivially verifiable job so the pipeline can be exercised end-to-end
@@ -93,6 +99,11 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     async "embed-lesson"(job) {
       const { lessonId } = job.data as { lessonId: string };
       return embedLesson(lessonId);
+    },
+    // Ramble → ranked goals + action items against active goals (docs/19)
+    async ideation(job) {
+      const { sessionId } = job.data as { sessionId: string };
+      return runIdeation(sessionId, job.attemptsMade + 1 >= (job.opts.attempts ?? 1));
     },
   },
   ghl: {},

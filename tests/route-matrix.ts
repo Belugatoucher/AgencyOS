@@ -67,6 +67,9 @@ type Fixture = {
   siteDesignB: string; // proposed design system on siteB
   siteBuildB: string; // manual build on siteB, running (awaiting a report)
   siteDeployB: string; // ready production deploy on siteB
+  goalB: string; // Ideation (docs/19) — active goal in B
+  ideaSessionB: string; // ready ramble in B
+  ideaItemB: string; // proposed idea (kind idea) in B
   cookies: Record<"admin" | "member" | "clientA" | "anon", string | null>;
 };
 
@@ -237,6 +240,18 @@ async function setup(): Promise<Fixture> {
     .values({ siteId: siteB!.id, environment: "production", status: "ready", url: "https://example.com" })
     .returning();
 
+  // Ideation fixture in B (docs/19 — internal-only; clients get 404).
+  const { goals, ideaSessions, ideaItems } = await import("../lib/db/schema");
+  const [goalB] = await db.insert(goals).values({ accountId: b!.id, title: "Matrix goal" }).returning();
+  const [ideaSessionB] = await db
+    .insert(ideaSessions)
+    .values({ accountId: b!.id, source: "text", transcript: "matrix probe", status: "ready", summary: "probe" })
+    .returning();
+  const [ideaItemB] = await db
+    .insert(ideaItems)
+    .values({ sessionId: ideaSessionB!.id, accountId: b!.id, kind: "idea", title: "Matrix idea", alignment: "new_direction" })
+    .returning();
+
   return {
     accountA: a!.id,
     accountB: b!.id,
@@ -264,6 +279,9 @@ async function setup(): Promise<Fixture> {
     siteDesignB: siteDesignB!.id,
     siteBuildB: siteBuildB!.id,
     siteDeployB: siteDeployB!.id,
+    goalB: goalB!.id,
+    ideaSessionB: ideaSessionB!.id,
+    ideaItemB: ideaItemB!.id,
     cookies: {
       admin: await mintSession(adminId),
       member: await mintSession(memberId),
@@ -988,6 +1006,52 @@ const CASES: Case[] = [
     path: () => "/api/sites/hooks/runner",
     body: () => ({ runRef: "probe", outcome: {} }),
     expect: { admin: 501, member: 501, clientA: 501, anon: 501 },
+  },
+  // ===== Ideation (docs/19 — internal-only; clients 404) =====
+  {
+    name: "GET goals in B",
+    method: "GET",
+    path: (f) => `/api/ideas/goals?account=${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST goal for A (clients cannot, even in their own account)",
+    method: "POST",
+    path: () => "/api/ideas/goals",
+    body: (f) => ({ accountId: f.accountA, title: "Matrix probe goal" }),
+    expect: { admin: 201, member: 201, clientA: 404, anon: ANON },
+  },
+  {
+    name: "PATCH goal in B",
+    method: "PATCH",
+    path: (f) => `/api/ideas/goals/${f.goalB}`,
+    body: () => ({ title: "Matrix goal renamed" }),
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET rambles in B",
+    method: "GET",
+    path: (f) => `/api/ideas/sessions?account=${f.accountB}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "GET ramble in B",
+    method: "GET",
+    path: (f) => `/api/ideas/sessions/${f.ideaSessionB}`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST park idea in B (client refused)",
+    method: "POST",
+    path: (f) => `/api/ideas/items/${f.ideaItemB}`,
+    body: () => ({ decision: "park" }),
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST accept-all on B ramble (client refused)",
+    method: "POST",
+    path: (f) => `/api/ideas/sessions/${f.ideaSessionB}/accept-actions`,
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
   },
 ];
 
