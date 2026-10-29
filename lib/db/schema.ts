@@ -888,6 +888,45 @@ export const ideaItems = pgTable(
   (t) => [index("idea_items_session_idx").on(t.sessionId, t.position)],
 );
 
+// ===== Website grader (db/012-grader.sql, docs/18 "Grader") =====
+
+export const graderReports = pgTable(
+  "grader_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    token: text("token").notNull().unique(),
+    source: text("source").notNull(), // public|internal|bulk
+    batchId: text("batch_id"),
+    url: text("url").notNull(),
+    businessName: text("business_name"),
+    city: text("city"),
+    keyword: text("keyword"),
+    contactName: text("contact_name"),
+    contactEmail: text("contact_email"),
+    contactPhone: text("contact_phone"),
+    leadId: uuid("lead_id").references(() => leads.id),
+    utm: jsonb("utm").notNull().default({}),
+    status: text("status").notNull().default("queued"), // queued|running|done|failed
+    score: integer("score"),
+    letter: text("letter"),
+    result: jsonb("result").notNull().default({}),
+    signals: jsonb("signals").notNull().default({}),
+    maps: jsonb("maps"),
+    error: text("error"),
+    views: integer("views").notNull().default(0),
+    lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("grader_reports_created_idx").on(t.createdAt.desc()).where(sql`deleted_at is null`),
+    index("grader_reports_batch_idx").on(t.batchId).where(sql`batch_id is not null`),
+  ],
+);
+
 // ===== Ops =====
 
 export const notifications = pgTable(
@@ -997,3 +1036,4 @@ export type IntegrationCredential = typeof integrationCredentials.$inferSelect;
 export type Goal = typeof goals.$inferSelect;
 export type IdeaSession = typeof ideaSessions.$inferSelect;
 export type IdeaItem = typeof ideaItems.$inferSelect;
+export type GraderReport = typeof graderReports.$inferSelect;

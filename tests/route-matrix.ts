@@ -1053,6 +1053,33 @@ const CASES: Case[] = [
     path: (f) => `/api/ideas/sessions/${f.ideaSessionB}/accept-actions`,
     expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
   },
+  // ===== Website grader (docs/18 "Grader") =====
+  {
+    name: "POST /api/grader with a private address → 400 for everyone (SSRF guard)",
+    method: "POST",
+    path: () => "/api/grader",
+    body: () => ({ url: "http://127.0.0.1:3000", name: "Probe", email: "probe@example.com" }),
+    expect: { admin: 400, member: 400, clientA: 400, anon: 400 },
+  },
+  {
+    name: "GET public report with a bogus token → 404",
+    method: "GET",
+    path: () => "/api/grader/report/not-a-real-token-but-long-enough-xx",
+    expect: { admin: 404, member: 404, clientA: 404, anon: 404 },
+  },
+  {
+    name: "GET grader console (internal only)",
+    method: "GET",
+    path: () => "/api/sites/grader",
+    expect: { admin: 200, member: 200, clientA: 404, anon: ANON },
+  },
+  {
+    name: "POST bulk grade (client refused before anything is queued)",
+    method: "POST",
+    path: () => "/api/sites/grader/bulk",
+    body: () => ({ rows: [{ url: "http://192.168.1.1" }] }),
+    expect: { admin: 400, member: 400, clientA: 400, anon: ANON },
+  },
 ];
 
 function matches(actual: number, expected: number | number[]): boolean {

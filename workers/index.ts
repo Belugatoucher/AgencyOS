@@ -23,6 +23,7 @@ import { runCrawl } from "../lib/services/site-intake";
 import { runProposal } from "../lib/services/site-design";
 import { applyRunnerCallback, buildOutcomeInput, optimizeWeekly, pollBuild, runBuild } from "../lib/services/site-builds";
 import { analyticsPull, healthSweep, pollDeploy, runDeploy, runHealth } from "../lib/services/site-ops";
+import { runGrader } from "../lib/services/grader";
 
 // Worker skeleton: every queue gets a Worker whose processors dispatch by job
 // name and always record a job_runs row (docs/00 — failures surface in
@@ -206,6 +207,11 @@ const processors: Record<QueueName, Record<string, Processor>> = {
     async "site-health"(job) {
       const { siteId } = job.data as { siteId: string };
       return runHealth(siteId);
+    },
+    // Website grader (docs/18 "Grader"): homepage + crawl + PageSpeed + SSL + Maps grid → grade
+    async "grader-run"(job) {
+      const { reportId } = job.data as { reportId: string };
+      return runGrader(reportId, job.attemptsMade + 1 >= (job.opts.attempts ?? 1));
     },
   },
 };
