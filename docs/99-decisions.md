@@ -14,6 +14,18 @@ Format:
 
 ---
 
+## 2026-10-31 — Agency OS and Vanessa: one platform, two runtimes (docs/21)
+**Context:** Vanessa (Ryan's Mac mini agent) and Agency OS grew overlapping dashboards, task lists, transcription, approvals, outreach and GHL clients writing into the same accounts.
+**Decision:** Agency OS is the agency's system of record and only interface, running its own agents (Autopilot) on a VPS. Vanessa is Ryan's VA on the Mac mini and works in Agency OS through a scoped API token. Agency OS is the sole GHL writer. Postgres is the truth for business knowledge; Obsidian is Ryan's personal second brain. Nothing client-facing runs from home: production on a VPS, sites and previews on Cloudflare Pages, the Mac mini runs staging only. Vanessa connects out (SSE); nothing connects in.
+**Alternatives considered:** one codebase and process (rejected: Vanessa supervises containers and needs macOS-host tools; an agent holding send/CRM/Docker keys shouldn't share a process with public routes); keeping them separate products (rejected: two of everything, double GHL writes).
+**Revisit if:** Vanessa needs to serve other team members, or the VPS can't run the agent workloads.
+
+## 2026-10-31 — Autopilot outreach: email only, approve-first, earned autonomy
+**Context:** Goal is a fully automated web design agency (scout → grade → rank → preview → outreach).
+**Decision:** Scout/grade/rank/preview start on auto; outreach and reply handling start approve-first and move up per stage only after 4 weeks of clean deliverability numbers. Cold email only from warmed secondary domains. No cold SMS or automated cold calls (TCPA). One kill switch, daily spend caps.
+**Alternatives considered:** fully automatic from day one — one bad week burns domains and reputation before anyone notices.
+**Revisit if:** a stage holds clean numbers for 4 weeks.
+
 ## 2026-10-28 — Website grader + web/SEO offer
 **Context:** Ryan wants a second offer (websites + local SEO, setup fee + small monthly) and a grader like Scroll Theory's Grader Kit to sell it.
 **Decision:** Grader lives in the Sites module. Scoring is a pure, deterministic function of measured signals (homepage inspection, crawl, PageSpeed, SSL, optional DataForSEO Maps grid), so re-grades show real movement and nothing is invented. Every outside source is optional and the report says what wasn't checked. Public runs: lead first (so a failed grade still leaves a person), then the job. Follow-up is GHL's job via its Inbound Webhook (flat keys for the field mapper); without it, the report is emailed. Prices live in `lib/grader/offer.ts` (Launch $1,500 + $149/mo, Growth $2,500 + $299/mo, founding half-off setup for 5) as the starting test in `docs/offers/web-seo.md`. Public pages sit outside the app's auth and use scoped CSS with system fonts (the app's CSP allows no external fonts). Opened tracking (views on the token) is the outbound sales signal.
